@@ -1,0 +1,6 @@
+{
+  "name": "SKY WARRIOR: DOMINION",
+  "description": "A 3D aerial flight combat game set in a golden sunset open world with modern fighter jets, guided missiles, enemy squadrons, and responsive desktop and mobile touch controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
