@@ -1,3 +1,19 @@
+/**
+ * SKY WARRIOR: DOMINION — flight game engine.
+ *
+ * Owns the Three.js scene, the player F-22X rig, enemy AI squadrons,
+ * cannons / guided missiles, checkpoints, collectibles, the three camera
+ * modes, and the per-frame HUD snapshot handed to the React shell.
+ *
+ * Public surface (constructor, setLivery, startGame, pauseGame,
+ * resumeGame, returnToTitle, cycleCamera, setCameraMode, prepareShot,
+ * setAutoTargetEnabled, toggleAutoTarget, setTouchJoystick,
+ * setTouchButton, dispose, and the `sound` field) is part of the
+ * contract with the rest of the app — it must not change shape.
+ * Everything below the public methods is internal and may be
+ * reorganised freely.
+ */
+
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { SoundEngine } from './audio';
@@ -53,8 +69,13 @@ import type {
   ProjectedTarget,
   RadarBlip,
   RunSummary,
+  Vec3,
 } from './types';
 import { createOpenWorld, type WorldHandles } from './world';
+
+/* ------------------------------------------------------------------ */
+/* Module-level scratch objects (reused every frame to avoid GC churn) */
+/* ------------------------------------------------------------------ */
 
 const _vA = new THREE.Vector3();
 const _vB = new THREE.Vector3();
@@ -65,6 +86,7 @@ const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _dummy = new THREE.Object3D();
 const _color = new THREE.Color();
 
+/** One pooled tracer round, rendered through a shared InstancedMesh. */
 interface BulletSlot {
   active: boolean;
   fromPlayer: boolean;
@@ -73,6 +95,7 @@ interface BulletSlot {
   life: number;
 }
 
+/** One pooled soft particle (explosion debris, smoke, contrails). */
 interface ParticleSlot {
   active: boolean;
   pos: THREE.Vector3;
@@ -84,6 +107,7 @@ interface ParticleSlot {
   color: THREE.Color;
 }
 
+/** One pooled expanding explosion ring. */
 interface ShockwaveSlot {
   active: boolean;
   age: number;
@@ -92,6 +116,7 @@ interface ShockwaveSlot {
   mesh: THREE.Mesh;
 }
 
+/** One pooled guided missile (8 player slots, 4 enemy slots). */
 interface ActiveMissile {
   active: boolean;
   fromPlayer: boolean;
@@ -109,6 +134,12 @@ export interface EngineCallbacks {
   onMuteChange?: (muted: boolean) => void;
 }
 
+/**
+ * Sniff out software rasterisers (SwiftShader / llvmpipe). On those the
+ * engine drops antialiasing, shadows and the compile step, and paces
+ * frames with a GPU fence instead of requestAnimationFrame so the tab
+ * stays responsive.
+ */
 function detectSoftwareGl(): boolean {
   try {
     const canvas = document.createElement('canvas');
@@ -124,7 +155,12 @@ function detectSoftwareGl(): boolean {
   }
 }
 
+/* ================================================================== */
+/* FlightGameEngine                                                    */
+/* ================================================================== */
+
 export class FlightGameEngine {
+  /* ---- wiring ---------------------------------------------------- */
   private container: HTMLElement;
   private callbacks: EngineCallbacks;
   private isSoftwareGl: boolean;
@@ -136,10 +172,11 @@ export class FlightGameEngine {
   private world: WorldHandles;
   public sound: SoundEngine;
 
+  /* ---- player ---------------------------------------------------- */
   private playerRig: FighterJetRig;
   private livery: JetLivery = 'obsidian';
 
-  // Simulation state
+  /* ---- run / mission state --------------------------------------- */
   private phase: GamePhase = 'title';
   private mode: GameMode = 'missions';
   private difficulty: DifficultyMode = 'beginner';
@@ -166,6 +203,8 @@ export class FlightGameEngine {
   private shotsFired = 0;
   private shotsHit = 0;
   private defeatReason: string | null = null;
+
+  /* ---- combat / feedback state ----------------------------------- */
   private autoTargetEnabled = true;
   private lockedTargetId: number | null = null;
   private lockProgress = 0;
@@ -186,21 +225,24 @@ export class FlightGameEngine {
   private titleClock = 0;
   private clockTime = 0;
 
+  /* ---- smoothed camera state ------------------------------------- */
   private camPos = new THREE.Vector3(-45, 162, 345);
   private camLook = new THREE.Vector3(-45, 155, 300);
 
+  /* ---- pooled projectiles / particles ---------------------------- */
   private readonly MAX_BULLETS = 160;
   private bullets: BulletSlot[] = [];
-  private bulletMesh: THREE.InstancedMesh;
+  private bulletMesh!: THREE.InstancedMesh;
 
   private readonly MAX_PARTICLES = 420;
   private particles: ParticleSlot[] = [];
-  private particleMesh: THREE.InstancedMesh;
+  private particleMesh!: THREE.InstancedMesh;
   private particleCursor = 0;
 
   private shockwaves: ShockwaveSlot[] = [];
   private missiles: ActiveMissile[] = [];
 
+  /* ---- input ------------------------------------------------------ */
   private keys = new Set<string>();
   private touchJoyX = 0;
   private touchJoyY = 0;
@@ -215,10 +257,15 @@ export class FlightGameEngine {
   private mouseGunDown = false;
   private mouseThrottleImpulse = 0;
 
+  /* ---- loop / lifecycle ------------------------------------------ */
   private frameId = 0;
   private lastTimestamp = 0;
   private disposed = false;
   private resizeObserver: ResizeObserver;
+
+  /* ================================================================== */
+  /* Construction                                                         */
+  /* ================================================================== */
 
   constructor(container: HTMLElement, callbacks: EngineCallbacks) {
     this.container = container;
@@ -237,30 +284,20 @@ export class FlightGameEngine {
       typeof window !== 'undefined' &&
       (window.matchMedia?.('(pointer: coarse)').matches || (navigator.maxTouchPoints ?? 0) > 0);
 
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: !this.isSoftwareGl,
-      powerPreference: 'high-performance',
-    });
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
-    this.renderer.setPixelRatio(
-      this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, this.isMobileDevice ? 1.5 : 2)
+    this.renderer = this.createRenderer(container);
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(
+      64,
+      this.renderer.domElement.width / Math.max(1, this.renderer.domElement.height),
+      0.5,
+      6500
     );
-    this.renderer.shadowMap.enabled = !this.isSoftwareGl;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
+    // Aspect is fixed up right away from the real container size.
     const rect = container.getBoundingClientRect();
     const width = Math.max(1, rect.width || window.innerWidth);
     const height = Math.max(1, rect.height || window.innerHeight);
-    this.renderer.setSize(width, height);
-    this.renderer.domElement.style.display = 'block';
-    this.renderer.domElement.style.width = '100%';
-    this.renderer.domElement.style.height = '100%';
-    container.appendChild(this.renderer.domElement);
-
-    this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(64, width / height, 0.5, 6500);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -273,7 +310,55 @@ export class FlightGameEngine {
     this.playerRig = createFighterJetModel(this.livery, this.textures, this.isSoftwareGl);
     this.scene.add(this.playerRig.root);
 
-    // Pooled Bullet InstancedMesh
+    this.buildBulletPool();
+    this.buildParticlePool();
+    this.buildShockwavePool();
+    this.buildMissilePool();
+
+    this.setupTitleShowcase();
+
+    if (!this.isSoftwareGl) {
+      this.renderer.compile(this.scene, this.camera);
+    }
+
+    this.attachEventListeners();
+
+    this.resizeObserver = new ResizeObserver(() => this.handleResize());
+    this.resizeObserver.observe(container);
+
+    this.lastTimestamp = performance.now();
+    this.renderer.render(this.scene, this.camera);
+    this.scheduleNextFrame();
+  }
+
+  /** Renderer + canvas sizing. Software GL gets no AA / shadows. */
+  private createRenderer(container: HTMLElement): THREE.WebGLRenderer {
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !this.isSoftwareGl,
+      powerPreference: 'high-performance',
+    });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
+    renderer.setPixelRatio(
+      this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, this.isMobileDevice ? 1.5 : 2)
+    );
+    renderer.shadowMap.enabled = !this.isSoftwareGl;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    const rect = container.getBoundingClientRect();
+    const width = Math.max(1, rect.width || window.innerWidth);
+    const height = Math.max(1, rect.height || window.innerHeight);
+    renderer.setSize(width, height);
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    container.appendChild(renderer.domElement);
+    return renderer;
+  }
+
+  /** Pooled tracer rounds rendered as one InstancedMesh. */
+  private buildBulletPool(): void {
     const bulletGeo = new THREE.BoxGeometry(0.28, 0.28, 4.8);
     const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     this.bulletMesh = new THREE.InstancedMesh(bulletGeo, bulletMat, this.MAX_BULLETS);
@@ -293,8 +378,10 @@ export class FlightGameEngine {
       this.bulletMesh.setColorAt(i, _color.setHex(0xfef08a));
     }
     this.bulletMesh.instanceMatrix.needsUpdate = true;
+  }
 
-    // Pooled Particle InstancedMesh (soft low-alpha particles so contrails never block jet)
+  /** Pooled soft low-alpha particles (explosions, smoke, contrails). */
+  private buildParticlePool(): void {
     const pGeo = new THREE.IcosahedronGeometry(1, 1);
     const pMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -322,8 +409,10 @@ export class FlightGameEngine {
       this.particleMesh.setColorAt(i, _color.setHex(0xffffff));
     }
     this.particleMesh.instanceMatrix.needsUpdate = true;
+  }
 
-    // Expanding Explosion Shockwave Ring Pool
+  /** Pooled expanding explosion shockwave rings. */
+  private buildShockwavePool(): void {
     const shockGeo = new THREE.RingGeometry(0.75, 1.0, 24);
     for (let i = 0; i < 6; i++) {
       const mat = new THREE.MeshBasicMaterial({
@@ -339,8 +428,10 @@ export class FlightGameEngine {
       this.scene.add(mesh);
       this.shockwaves.push({ active: false, age: 0, maxAge: 0.55, maxScale: 32, mesh });
     }
+  }
 
-    // Pooled Guided Missiles
+  /** Pooled guided missiles: slots 0-7 belong to the player, 8-11 to enemies. */
+  private buildMissilePool(): void {
     for (let i = 0; i < 12; i++) {
       const mesh = createMissileModel(i >= 8);
       mesh.visible = false;
@@ -355,13 +446,9 @@ export class FlightGameEngine {
         mesh,
       });
     }
+  }
 
-    this.setupTitleShowcase();
-
-    if (!this.isSoftwareGl) {
-      this.renderer.compile(this.scene, this.camera);
-    }
-
+  private attachEventListeners(): void {
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
     window.addEventListener('blur', this.handleBlur);
@@ -370,14 +457,11 @@ export class FlightGameEngine {
     window.addEventListener('mouseup', this.handleMouseUp);
     this.renderer.domElement.addEventListener('contextmenu', this.handleContextMenu);
     this.renderer.domElement.addEventListener('wheel', this.handleWheel, { passive: true });
-
-    this.resizeObserver = new ResizeObserver(() => this.handleResize());
-    this.resizeObserver.observe(container);
-
-    this.lastTimestamp = performance.now();
-    this.renderer.render(this.scene, this.camera);
-    this.scheduleNextFrame();
   }
+
+  /* ================================================================== */
+  /* Title showcase                                                       */
+  /* ================================================================== */
 
   private setupTitleShowcase(): void {
     this.phase = 'title';
@@ -402,6 +486,10 @@ export class FlightGameEngine {
     this.world.update(this.clockTime, this.playerRig.root.position, this.camera.position);
     this.emitHud();
   }
+
+  /* ================================================================== */
+  /* Public session API                                                   */
+  /* ================================================================== */
 
   public setLivery(livery: JetLivery): void {
     if (this.livery === livery) return;
@@ -429,37 +517,10 @@ export class FlightGameEngine {
 
     const diffCfg = DIFFICULTY_CONFIG[difficulty];
     this.player = createInitialPlayerState(skipTakeoff, difficulty);
-    this.score = 0;
-    this.combo = 1;
-    this.comboTimer = 0;
-    this.kills = 0;
-    this.wave = 1;
-    this.elapsedSec = 0;
-    this.shotsFired = 0;
-    this.shotsHit = 0;
-    this.defeatReason = null;
-    this.lockedTargetId = null;
-    this.lockProgress = 0;
-    this.trauma = 0;
-    this.hitstopTimer = 0;
-    this.damageFlash = 0;
-    this.hitMarkerTimer = 0;
-    this.combatFeedback = null;
-    this.muzzleFlashTimers = [0, 0];
-    this.gunOverheated = false;
+    this.resetRunCounters();
     this.enemyMissileCooldown = diffCfg.enemyMissileCooldown * 0.9;
     this.survivalSpawnTimer = 0;
-    this.keys.clear();
-    this.mouseGunDown = false;
-    this.mouseThrottleImpulse = 0;
-    this.missileJustPressed = false;
-    this.maneuverJustPressed = false;
-    this.touchButtons = {
-      fireGun: false,
-      fireMissile: false,
-      boost: false,
-      maneuver: false,
-    };
+    this.resetTransientInput();
 
     if (mode === 'missions') {
       const m = MISSIONS[this.missionIndex];
@@ -486,21 +547,7 @@ export class FlightGameEngine {
     this.spawnCollectibleMeshes();
 
     this.syncPlayerRigTransform(0.016);
-
-    const fwd = getForwardVector(this.player.heading, this.player.pitch, _vA);
-    this.camPos.set(
-      this.player.pos.x - fwd.x * 23,
-      this.player.pos.y + 6.4,
-      this.player.pos.z - fwd.z * 23
-    );
-    this.camLook.set(
-      this.player.pos.x + fwd.x * 45,
-      this.player.pos.y + 1.8,
-      this.player.pos.z + fwd.z * 45
-    );
-    this.camera.position.copy(this.camPos);
-    this.camera.lookAt(this.camLook);
-    this.camera.updateMatrixWorld();
+    this.frameCameraBehindPlayer(23, 6.4, 45, 1.8);
 
     // Immediately auto-select nearest hostile if auto-target is enabled
     const initialLock = evaluateTargetLock(
@@ -521,10 +568,30 @@ export class FlightGameEngine {
     this.emitHud();
   }
 
-  public pauseGame(): void {
-    if (this.phase !== 'playing') return;
-    this.phase = 'paused';
-    document.body.dataset.state = 'paused';
+  /** Zero the per-run score / combat counters for a fresh run. */
+  private resetRunCounters(): void {
+    this.score = 0;
+    this.combo = 1;
+    this.comboTimer = 0;
+    this.kills = 0;
+    this.wave = 1;
+    this.elapsedSec = 0;
+    this.shotsFired = 0;
+    this.shotsHit = 0;
+    this.defeatReason = null;
+    this.lockedTargetId = null;
+    this.lockProgress = 0;
+    this.trauma = 0;
+    this.hitstopTimer = 0;
+    this.damageFlash = 0;
+    this.hitMarkerTimer = 0;
+    this.combatFeedback = null;
+    this.muzzleFlashTimers = [0, 0];
+    this.gunOverheated = false;
+  }
+
+  /** Clear held keys / buttons so a fresh run never inherits stale input. */
+  private resetTransientInput(): void {
     this.keys.clear();
     this.mouseGunDown = false;
     this.mouseThrottleImpulse = 0;
@@ -536,6 +603,36 @@ export class FlightGameEngine {
       boost: false,
       maneuver: false,
     };
+  }
+
+  /** Place the smoothed camera behind the jet, looking ahead along its nose. */
+  private frameCameraBehindPlayer(
+    backDist: number,
+    height: number,
+    lookDist: number,
+    lookHeight: number
+  ): void {
+    const fwd = getForwardVector(this.player.heading, this.player.pitch, _vA);
+    this.camPos.set(
+      this.player.pos.x - fwd.x * backDist,
+      this.player.pos.y + height,
+      this.player.pos.z - fwd.z * backDist
+    );
+    this.camLook.set(
+      this.player.pos.x + fwd.x * lookDist,
+      this.player.pos.y + lookHeight,
+      this.player.pos.z + fwd.z * lookDist
+    );
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(this.camLook);
+    this.camera.updateMatrixWorld();
+  }
+
+  public pauseGame(): void {
+    if (this.phase !== 'playing') return;
+    this.phase = 'paused';
+    document.body.dataset.state = 'paused';
+    this.resetTransientInput();
     this.sound.updateEngine(false, 0, false, 0, 0);
     this.callbacks.onPhaseChange('paused');
     this.emitHud();
@@ -571,6 +668,11 @@ export class FlightGameEngine {
     return mode;
   }
 
+  /**
+   * Canned camera framings used by the marketing / screenshot flow.
+   * 'start' returns to the title screen, 'takeoff' plays the runway
+   * roll, 'play' / 'cockpit' drop the jet mid-air in front of hostiles.
+   */
   public prepareShot(shot: string): void {
     if (shot === 'start') {
       this.returnToTitle();
@@ -664,6 +766,11 @@ export class FlightGameEngine {
     this.touchButtons[btn] = pressed;
   }
 
+  /* ================================================================== */
+  /* Cleanup helpers                                                      */
+  /* ================================================================== */
+
+  /** Dispose every geometry / material under a group (shared textures survive). */
   private disposeGroupResources(group: THREE.Object3D): void {
     group.traverse((obj) => {
       if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.Points) {
@@ -677,6 +784,7 @@ export class FlightGameEngine {
     });
   }
 
+  /** Remove every dynamic actor (enemies, rings, pickups, projectiles). */
   private clearDynamicActors(): void {
     for (const rig of this.enemyRigs.values()) {
       this.scene.remove(rig.root);
@@ -711,6 +819,10 @@ export class FlightGameEngine {
     }
     this.playerRig.root.visible = true;
   }
+
+  /* ================================================================== */
+  /* Spawning                                                             */
+  /* ================================================================== */
 
   private spawnCheckpoints(): void {
     for (const cp of this.checkpoints) {
@@ -789,6 +901,11 @@ export class FlightGameEngine {
     this.bannerTimer = duration;
   }
 
+  /* ================================================================== */
+  /* Input                                                                */
+  /* ================================================================== */
+
+  /** Merge keyboard, mouse, touch joystick and touch buttons into one input frame. */
   private readInput(): FlightInput {
     let pitch = this.touchJoyY;
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) pitch += 1;
@@ -819,6 +936,7 @@ export class FlightGameEngine {
       this.keys.has('Space') ||
       this.keys.has('KeyJ');
 
+    // Edge-triggered actions are consumed here so a single press fires once.
     const fireMissile = this.missileJustPressed;
     const maneuver = this.maneuverJustPressed;
     this.missileJustPressed = false;
@@ -835,6 +953,10 @@ export class FlightGameEngine {
       maneuver,
     };
   }
+
+  /* ================================================================== */
+  /* Particles & explosions                                               */
+  /* ================================================================== */
 
   private spawnParticle(
     x: number,
@@ -899,6 +1021,11 @@ export class FlightGameEngine {
     }
   }
 
+  /* ================================================================== */
+  /* Weapons                                                              */
+  /* ================================================================== */
+
+  /** Fire one cannon round from the alternating muzzle, with aim-assist lead. */
   private firePlayerCannons(): void {
     if (this.gunOverheated || this.player.gunHeat >= 0.98) {
       if (!this.gunOverheated) {
@@ -983,38 +1110,45 @@ export class FlightGameEngine {
     const launchSpeed = Math.max(260, this.player.speed + 145);
     slot.vel.set(fwd.x * launchSpeed, fwd.y * launchSpeed, fwd.z * launchSpeed);
 
-    // Track locked/auto-selected enemy reliably, or acquire closest forward hostile
+    slot.targetEnemyId = this.acquireMissileTarget(fwd);
+    slot.life = 6.0;
+    slot.mesh.visible = true;
+    slot.mesh.position.copy(slot.pos);
+    this.sound.playMissileLaunch();
+    this.trauma = Math.min(1, this.trauma + 0.14);
+  }
+
+  /**
+   * Pick a missile target: the locked / auto-selected enemy when one is
+   * good enough, otherwise the best-scoring hostile ahead of the jet.
+   */
+  private acquireMissileTarget(fwd: Vec3): number | null {
     let targetId: number | null =
       this.autoTargetEnabled && this.lockedTargetId !== null
         ? this.lockedTargetId
         : this.lockedTargetId !== null && this.lockProgress >= 0.35
         ? this.lockedTargetId
         : null;
-    if (targetId === null) {
-      let bestScore = -Infinity;
-      for (const e of this.enemies) {
-        if (!e.alive) continue;
-        const dx = e.pos.x - this.player.pos.x;
-        const dy = e.pos.y - this.player.pos.y;
-        const dz = e.pos.z - this.player.pos.z;
-        const dist = Math.hypot(dx, dy, dz);
-        if (dist < 10 || dist > 2000) continue;
-        const dot = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dist;
-        if (dot > 0.52) {
-          const score = dot - dist / 4500;
-          if (score > bestScore) {
-            bestScore = score;
-            targetId = e.id;
-          }
+    if (targetId !== null) return targetId;
+
+    let bestScore = -Infinity;
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const dx = e.pos.x - this.player.pos.x;
+      const dy = e.pos.y - this.player.pos.y;
+      const dz = e.pos.z - this.player.pos.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist < 10 || dist > 2000) continue;
+      const dot = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dist;
+      if (dot > 0.52) {
+        const score = dot - dist / 4500;
+        if (score > bestScore) {
+          bestScore = score;
+          targetId = e.id;
         }
       }
     }
-    slot.targetEnemyId = targetId;
-    slot.life = 6.0;
-    slot.mesh.visible = true;
-    slot.mesh.position.copy(slot.pos);
-    this.sound.playMissileLaunch();
-    this.trauma = Math.min(1, this.trauma + 0.14);
+    return targetId;
   }
 
   private launchEnemyMissile(enemy: EnemyUnitState): void {
@@ -1038,6 +1172,10 @@ export class FlightGameEngine {
     this.showBanner('INCOMING MISSILE — EVADE!', 2.2);
   }
 
+  /* ================================================================== */
+  /* Damage, scoring & run end                                            */
+  /* ================================================================== */
+
   private damageEnemy(enemy: EnemyUnitState, amount: number, isMissile: boolean): void {
     if (!enemy.alive) return;
     enemy.health -= amount;
@@ -1046,46 +1184,7 @@ export class FlightGameEngine {
     this.shotsHit++;
 
     if (enemy.health <= 0) {
-      enemy.health = 0;
-      enemy.alive = false;
-      enemy.dyingTimer = 0.85;
-      this.kills++;
-      const basePts = getEnemyScoreValue(enemy.archetype);
-      const pts = basePts * this.combo;
-      this.score += pts;
-      this.combo = Math.min(5, this.combo + 1);
-      this.comboTimer = 8.0;
-
-      if (this.score > this.bestScore) {
-        this.bestScore = this.score;
-        try {
-          localStorage.setItem('sky_warrior_best_score', String(this.bestScore));
-        } catch {
-          // Ignore
-        }
-      }
-      this.hitstopTimer = isMissile ? 0.045 : 0.025;
-      this.trauma = Math.min(1, this.trauma + 0.36);
-      this.spawnExplosion(enemy.pos, 1.45);
-      this.sound.playExplosion(true);
-      this.combatFeedback = {
-        text: `TARGET DESTROYED · ${enemy.callsign} (+${pts})`,
-        kind: 'kill',
-        timer: 1.65,
-      };
-      if (this.lockedTargetId === enemy.id) {
-        const nextLock = evaluateTargetLock(
-          this.player,
-          this.enemies,
-          null,
-          0,
-          0.016,
-          this.difficulty,
-          this.autoTargetEnabled
-        );
-        this.lockedTargetId = nextLock.lockedId;
-        this.lockProgress = nextLock.lockProgress;
-      }
+      this.registerKill(enemy, isMissile);
     } else {
       if (enemy.evadeTimer <= 0 && enemy.archetype !== 'gunship') {
         enemy.evadeTimer = 1.25;
@@ -1096,6 +1195,54 @@ export class FlightGameEngine {
         timer: isMissile ? 0.85 : 0.45,
       };
       this.sound.playHitImpact();
+    }
+  }
+
+  /** Score, combo, best-score persistence and feedback for a destroyed hostile. */
+  private registerKill(enemy: EnemyUnitState, isMissile: boolean): void {
+    enemy.health = 0;
+    enemy.alive = false;
+    enemy.dyingTimer = 0.85;
+    this.kills++;
+    const basePts = getEnemyScoreValue(enemy.archetype);
+    const pts = basePts * this.combo;
+    this.score += pts;
+    this.combo = Math.min(5, this.combo + 1);
+    this.comboTimer = 8.0;
+
+    this.persistBestScore();
+    this.hitstopTimer = isMissile ? 0.045 : 0.025;
+    this.trauma = Math.min(1, this.trauma + 0.36);
+    this.spawnExplosion(enemy.pos, 1.45);
+    this.sound.playExplosion(true);
+    this.combatFeedback = {
+      text: `TARGET DESTROYED · ${enemy.callsign} (+${pts})`,
+      kind: 'kill',
+      timer: 1.65,
+    };
+    if (this.lockedTargetId === enemy.id) {
+      const nextLock = evaluateTargetLock(
+        this.player,
+        this.enemies,
+        null,
+        0,
+        0.016,
+        this.difficulty,
+        this.autoTargetEnabled
+      );
+      this.lockedTargetId = nextLock.lockedId;
+      this.lockProgress = nextLock.lockProgress;
+    }
+  }
+
+  private persistBestScore(): void {
+    if (this.score > this.bestScore) {
+      this.bestScore = this.score;
+      try {
+        localStorage.setItem('sky_warrior_best_score', String(this.bestScore));
+      } catch {
+        // Ignore
+      }
     }
   }
 
@@ -1123,14 +1270,7 @@ export class FlightGameEngine {
       const timeBonus = this.timeRemainingSec ? Math.round(this.timeRemainingSec * 12) : 0;
       const ringBonus = checkpointsCleared * 250;
       this.score += 1000 + timeBonus + ringBonus;
-      if (this.score > this.bestScore) {
-        this.bestScore = this.score;
-        try {
-          localStorage.setItem('sky_warrior_best_score', String(this.bestScore));
-        } catch {
-          // Ignore
-        }
-      }
+      this.persistBestScore();
       this.sound.playVictory();
     } else {
       this.spawnExplosion(this.player.pos, 1.8);
@@ -1166,29 +1306,13 @@ export class FlightGameEngine {
     this.emitHud();
   }
 
+  /* ================================================================== */
+  /* Simulation — one fixed step                                          */
+  /* ================================================================== */
+
   private stepSimulation(dt: number): void {
     this.clockTime += dt;
-    if (this.damageFlash > 0) this.damageFlash = Math.max(0, this.damageFlash - dt * 2.8);
-    if (this.hitMarkerTimer > 0) this.hitMarkerTimer = Math.max(0, this.hitMarkerTimer - dt);
-    if (this.combatFeedback) {
-      this.combatFeedback.timer -= dt;
-      if (this.combatFeedback.timer <= 0) this.combatFeedback = null;
-    }
-    if (this.trauma > 0) this.trauma = Math.max(0, this.trauma - dt * 1.9);
-    if (this.comboTimer > 0) {
-      this.comboTimer -= dt;
-      if (this.comboTimer <= 0) this.combo = 1;
-    }
-    if (this.bannerTimer > 0) {
-      this.bannerTimer -= dt;
-      if (this.bannerTimer <= 0) this.bannerMessage = null;
-    }
-    for (let i = 0; i < 2; i++) {
-      if (this.muzzleFlashTimers[i] > 0) {
-        this.muzzleFlashTimers[i] = Math.max(0, this.muzzleFlashTimers[i] - dt);
-      }
-      this.playerRig.muzzleFlashes[i].visible = this.muzzleFlashTimers[i] > 0;
-    }
+    this.decayFeedbackTimers(dt);
 
     if (this.hitstopTimer > 0) {
       this.hitstopTimer = Math.max(0, this.hitstopTimer - dt);
@@ -1206,33 +1330,18 @@ export class FlightGameEngine {
 
     const diffCfg = DIFFICULTY_CONFIG[this.difficulty];
     const input = this.readInput();
-    if (this.gunOverheated && this.player.gunHeat <= 0.45) {
-      this.gunOverheated = false;
-    }
+
+    // Gun-heat latch: once tripped (>= 0.98) the cannon stays locked out
+    // until heat has cooled back down to <= 0.45.
+    this.clearOverheatIfCooled();
     const flightInput = this.gunOverheated ? { ...input, fireGun: false } : input;
     const prevManeuver = this.player.maneuverTimer;
     const flightOutcome = stepPlayerFlight(this.player, flightInput, dt, this.mode, this.difficulty);
-    if (!this.gunOverheated && this.player.gunHeat >= 0.98) {
-      this.gunOverheated = true;
-      this.showBanner('CANNON OVERHEAT — COOLING', 1.4);
-    }
+    this.tripOverheatIfHot();
 
     if (prevManeuver <= 0 && this.player.maneuverTimer > 0) {
       this.sound.playManeuver();
-      for (let i = 0; i < 10; i++) {
-        this.spawnParticle(
-          this.player.pos.x,
-          this.player.pos.y - 1,
-          this.player.pos.z,
-          (Math.random() - 0.5) * 48,
-          -14 - Math.random() * 18,
-          (Math.random() - 0.5) * 48,
-          0.95,
-          0.9,
-          2.2,
-          0xfef08a
-        );
-      }
+      this.spawnManeuverBurst();
     }
 
     if (flightOutcome.terrainCrash) {
@@ -1248,65 +1357,10 @@ export class FlightGameEngine {
       return;
     }
 
-    // Physical skyscraper/tower collision handling with fair recovery & cooldown
-    if (this.player.takeoffTimer <= 0) {
-      const hitBuilding = checkPlayerBuildingCollision(this.player.pos, this.world.buildingObstacles);
-      if (hitBuilding) {
-        const dx = this.player.pos.x - hitBuilding.x;
-        const dz = this.player.pos.z - hitBuilding.z;
-        const dist = Math.max(1, Math.hypot(dx, dz));
-        this.player.pos.x = hitBuilding.x + (dx / dist) * (hitBuilding.halfW + 10);
-        this.player.pos.z = hitBuilding.z + (dz / dist) * (hitBuilding.halfD + 10);
-        this.player.pos.y = Math.max(this.player.pos.y, hitBuilding.topY + 8);
-        this.player.pitch = Math.max(0.22, this.player.pitch);
-        if (this.mode !== 'freeflight' && this.player.collisionCooldown <= 0) {
-          this.player.collisionCooldown = 1.4;
-          this.spawnExplosion(this.player.pos, 0.65);
-          this.showBanner('TOWER CLEARANCE — PULL UP!', 1.5);
-          this.damagePlayer(diffCfg.scrapeDmg, 'Aircraft lost in urban tower impact.');
-          if (this.phase !== 'playing') return;
-        }
-      }
-    }
+    if (!this.handleBuildingCollision(diffCfg)) return;
 
-    // Crisp wingtip condensation ribbons when banking hard or boosting (small scale so view stays clear!)
-    if ((this.player.afterburnerActive && this.player.takeoffTimer <= 0) || Math.abs(this.player.bank) > 0.55) {
-      const rx = Math.cos(this.player.heading) * 5.6;
-      const rz = -Math.sin(this.player.heading) * 5.6;
-      const fwd = getForwardVector(this.player.heading, this.player.pitch, _vA);
-      this.spawnParticle(
-        this.player.pos.x + rx - fwd.x * 2.5,
-        this.player.pos.y,
-        this.player.pos.z + rz - fwd.z * 2.5,
-        -fwd.x * 8,
-        -fwd.y * 8,
-        -fwd.z * 8,
-        0.26,
-        0.16,
-        0.38,
-        0xe2e8f0
-      );
-      this.spawnParticle(
-        this.player.pos.x - rx - fwd.x * 2.5,
-        this.player.pos.y,
-        this.player.pos.z - rz - fwd.z * 2.5,
-        -fwd.x * 8,
-        -fwd.y * 8,
-        -fwd.z * 8,
-        0.26,
-        0.16,
-        0.38,
-        0xe2e8f0
-      );
-    }
-
-    // Control surfaces animation
-    this.playerRig.leftAileron.rotation.x = damp(this.playerRig.leftAileron.rotation.x, input.roll * 0.48, 12, dt);
-    this.playerRig.rightAileron.rotation.x = damp(this.playerRig.rightAileron.rotation.x, -input.roll * 0.48, 12, dt);
-    this.playerRig.leftElevator.rotation.x = damp(this.playerRig.leftElevator.rotation.x, -input.pitch * 0.42, 12, dt);
-    this.playerRig.rightElevator.rotation.x = damp(this.playerRig.rightElevator.rotation.x, -input.pitch * 0.42, 12, dt);
-    this.playerRig.leftRudder.rotation.y = damp(this.playerRig.leftRudder.rotation.y, input.yaw * 0.42, 12, dt);
-    this.playerRig.rightRudder.rotation.y = damp(this.playerRig.rightRudder.rotation.y, input.yaw * 0.42, 12, dt);
+    this.spawnWingtipRibbons();
+    this.animateControlSurfaces(input, dt);
 
     // Smooth landing gear retraction after liftoff
     const gearScale = this.player.takeoffTimer > 1.0 ? 1 : clamp(this.player.takeoffTimer / 1.0, 0, 1);
@@ -1357,7 +1411,150 @@ export class FlightGameEngine {
       this.lockProgress
     );
 
-    // Step Enemies & Attack Token Pool
+    const aliveEnemies = this.stepEnemySquadron(dt);
+    this.stepEnemyMissileTimer(dt, diffCfg, aliveEnemies);
+    this.stepBulletPool(dt, diffCfg);
+    this.stepMissilePool(dt, diffCfg);
+    this.stepCheckpointRings(dt);
+    this.stepCollectiblePods(dt);
+    this.checkWaveProgress(aliveEnemies, dt);
+  }
+
+  /** Decay all the short-lived feedback timers each frame. */
+  private decayFeedbackTimers(dt: number): void {
+    if (this.damageFlash > 0) this.damageFlash = Math.max(0, this.damageFlash - dt * 2.8);
+    if (this.hitMarkerTimer > 0) this.hitMarkerTimer = Math.max(0, this.hitMarkerTimer - dt);
+    if (this.combatFeedback) {
+      this.combatFeedback.timer -= dt;
+      if (this.combatFeedback.timer <= 0) this.combatFeedback = null;
+    }
+    if (this.trauma > 0) this.trauma = Math.max(0, this.trauma - dt * 1.9);
+    if (this.comboTimer > 0) {
+      this.comboTimer -= dt;
+      if (this.comboTimer <= 0) this.combo = 1;
+    }
+    if (this.bannerTimer > 0) {
+      this.bannerTimer -= dt;
+      if (this.bannerTimer <= 0) this.bannerMessage = null;
+    }
+    for (let i = 0; i < 2; i++) {
+      if (this.muzzleFlashTimers[i] > 0) {
+        this.muzzleFlashTimers[i] = Math.max(0, this.muzzleFlashTimers[i] - dt);
+      }
+      this.playerRig.muzzleFlashes[i].visible = this.muzzleFlashTimers[i] > 0;
+    }
+  }
+
+  private clearOverheatIfCooled(): void {
+    if (this.gunOverheated && this.player.gunHeat <= 0.45) {
+      this.gunOverheated = false;
+    }
+  }
+
+  private tripOverheatIfHot(): void {
+    if (!this.gunOverheated && this.player.gunHeat >= 0.98) {
+      this.gunOverheated = true;
+      this.showBanner('CANNON OVERHEAT — COOLING', 1.4);
+    }
+  }
+
+  private spawnManeuverBurst(): void {
+    for (let i = 0; i < 10; i++) {
+      this.spawnParticle(
+        this.player.pos.x,
+        this.player.pos.y - 1,
+        this.player.pos.z,
+        (Math.random() - 0.5) * 48,
+        -14 - Math.random() * 18,
+        (Math.random() - 0.5) * 48,
+        0.95,
+        0.9,
+        2.2,
+        0xfef08a
+      );
+    }
+  }
+
+  /**
+   * Physical skyscraper / tower collision: shove the jet out of the
+   * building footprint, lift it above the roofline and pitch it up.
+   * Returns false when the hit ended the run (caller must stop stepping).
+   */
+  private handleBuildingCollision(diffCfg: (typeof DIFFICULTY_CONFIG)[DifficultyMode]): boolean {
+    if (this.player.takeoffTimer > 0) return true;
+    const hitBuilding = checkPlayerBuildingCollision(this.player.pos, this.world.buildingObstacles);
+    if (!hitBuilding) return true;
+
+    const dx = this.player.pos.x - hitBuilding.x;
+    const dz = this.player.pos.z - hitBuilding.z;
+    const dist = Math.max(1, Math.hypot(dx, dz));
+    this.player.pos.x = hitBuilding.x + (dx / dist) * (hitBuilding.halfW + 10);
+    this.player.pos.z = hitBuilding.z + (dz / dist) * (hitBuilding.halfD + 10);
+    this.player.pos.y = Math.max(this.player.pos.y, hitBuilding.topY + 8);
+    this.player.pitch = Math.max(0.22, this.player.pitch);
+    if (this.mode !== 'freeflight' && this.player.collisionCooldown <= 0) {
+      this.player.collisionCooldown = 1.4;
+      this.spawnExplosion(this.player.pos, 0.65);
+      this.showBanner('TOWER CLEARANCE — PULL UP!', 1.5);
+      this.damagePlayer(diffCfg.scrapeDmg, 'Aircraft lost in urban tower impact.');
+      if (this.phase !== 'playing') return false;
+    }
+    return true;
+  }
+
+  /** Crisp wingtip condensation ribbons when banking hard or boosting. */
+  private spawnWingtipRibbons(): void {
+    if (
+      !((this.player.afterburnerActive && this.player.takeoffTimer <= 0) || Math.abs(this.player.bank) > 0.55)
+    ) {
+      return;
+    }
+    const rx = Math.cos(this.player.heading) * 5.6;
+    const rz = -Math.sin(this.player.heading) * 5.6;
+    const fwd = getForwardVector(this.player.heading, this.player.pitch, _vA);
+    this.spawnParticle(
+      this.player.pos.x + rx - fwd.x * 2.5,
+      this.player.pos.y,
+      this.player.pos.z + rz - fwd.z * 2.5,
+      -fwd.x * 8,
+      -fwd.y * 8,
+      -fwd.z * 8,
+      0.26,
+      0.16,
+      0.38,
+      0xe2e8f0
+    );
+    this.spawnParticle(
+      this.player.pos.x - rx - fwd.x * 2.5,
+      this.player.pos.y,
+      this.player.pos.z - rz - fwd.z * 2.5,
+      -fwd.x * 8,
+      -fwd.y * 8,
+      -fwd.z * 8,
+      0.26,
+      0.16,
+      0.38,
+      0xe2e8f0
+    );
+  }
+
+  /** Ease ailerons / elevators / rudders toward the current stick deflection. */
+  private animateControlSurfaces(input: FlightInput, dt: number): void {
+    const rig = this.playerRig;
+    rig.leftAileron.rotation.x = damp(rig.leftAileron.rotation.x, input.roll * 0.48, 12, dt);
+    rig.rightAileron.rotation.x = damp(rig.rightAileron.rotation.x, -input.roll * 0.48, 12, dt);
+    rig.leftElevator.rotation.x = damp(rig.leftElevator.rotation.x, -input.pitch * 0.42, 12, dt);
+    rig.rightElevator.rotation.x = damp(rig.rightElevator.rotation.x, -input.pitch * 0.42, 12, dt);
+    rig.leftRudder.rotation.y = damp(rig.leftRudder.rotation.y, input.yaw * 0.42, 12, dt);
+    rig.rightRudder.rotation.y = damp(rig.rightRudder.rotation.y, input.yaw * 0.42, 12, dt);
+  }
+
+  /**
+   * Step every enemy's AI (at most 3 attack tokens per frame), sync rigs,
+   * and remove fully-dead units. Returns the number of enemies alive
+   * at the start of the frame — the wave logic's source of truth.
+   */
+  private stepEnemySquadron(dt: number): number {
     let activeAttackTokens = 3;
     let aliveEnemies = 0;
 
@@ -1374,35 +1571,7 @@ export class FlightGameEngine {
 
       const rig = this.enemyRigs.get(enemy.id);
       if (rig) {
-        rig.root.position.set(enemy.pos.x, enemy.pos.y, enemy.pos.z);
-        _euler.set(enemy.pitch, enemy.heading, enemy.bank, 'YXZ');
-        rig.root.quaternion.setFromEuler(_euler);
-        const flicker = 0.85 + Math.sin(this.clockTime * 35 + enemy.id) * 0.25;
-        rig.flameMesh.scale.set(1, 1, flicker);
-
-        // Telegraph glow before enemy fires + Gunship turret tracking
-        const teleMat = rig.telegraphGlow.material as THREE.MeshBasicMaterial;
-        teleMat.opacity = enemy.telegraphTimer > 0 ? 0.85 : 0;
-        if (rig.turretGroup && enemy.alive) {
-          rig.turretGroup.rotation.y += dt * 1.4;
-        }
-
-        // Death spiral smoke ribbon
-        if (!enemy.alive) {
-          this.spawnParticle(enemy.pos.x, enemy.pos.y, enemy.pos.z, 0, 2, 0, 0.55, 1.5, 4.5, 0x334155);
-        }
-
-        for (const mat of rig.bodyMaterials) {
-          if (enemy.hitFlashTimer > 0) {
-            mat.emissive.setHex(0xffffff);
-            mat.emissiveIntensity = 1.8;
-          } else {
-            mat.emissiveIntensity = 0.22;
-            mat.emissive.setHex(
-              enemy.archetype === 'interceptor' ? 0x7f1d1d : enemy.archetype === 'flanker' ? 0x0284c7 : 0xb45309
-            );
-          }
-        }
+        this.syncEnemyRig(rig, enemy, dt);
       }
 
       if (!enemy.alive && enemy.dyingTimer <= 0) {
@@ -1415,20 +1584,61 @@ export class FlightGameEngine {
         this.enemies.splice(i, 1);
       }
     }
+    return aliveEnemies;
+  }
 
-    if (this.mode !== 'freeflight' && aliveEnemies > 0 && this.player.takeoffTimer <= 0) {
-      this.enemyMissileCooldown -= dt;
-      if (this.enemyMissileCooldown <= 0) {
-        const attacker = this.enemies.find((e) => e.alive);
-        if (attacker) this.launchEnemyMissile(attacker);
-        this.enemyMissileCooldown =
-          this.mode === 'survival'
-            ? Math.max(7.5, diffCfg.enemyMissileCooldown - this.wave * 0.4)
-            : diffCfg.enemyMissileCooldown;
-      }
+  /** Pose one enemy rig, flicker its flame, show telegraphs and hit flashes. */
+  private syncEnemyRig(rig: EnemyModelRig, enemy: EnemyUnitState, dt: number): void {
+    rig.root.position.set(enemy.pos.x, enemy.pos.y, enemy.pos.z);
+    _euler.set(enemy.pitch, enemy.heading, enemy.bank, 'YXZ');
+    rig.root.quaternion.setFromEuler(_euler);
+    const flicker = 0.85 + Math.sin(this.clockTime * 35 + enemy.id) * 0.25;
+    rig.flameMesh.scale.set(1, 1, flicker);
+
+    // Telegraph glow before enemy fires + Gunship turret tracking
+    const teleMat = rig.telegraphGlow.material as THREE.MeshBasicMaterial;
+    teleMat.opacity = enemy.telegraphTimer > 0 ? 0.85 : 0;
+    if (rig.turretGroup && enemy.alive) {
+      rig.turretGroup.rotation.y += dt * 1.4;
     }
 
-    // Step Bullets with continuous swept segment-sphere collision
+    // Death spiral smoke ribbon
+    if (!enemy.alive) {
+      this.spawnParticle(enemy.pos.x, enemy.pos.y, enemy.pos.z, 0, 2, 0, 0.55, 1.5, 4.5, 0x334155);
+    }
+
+    for (const mat of rig.bodyMaterials) {
+      if (enemy.hitFlashTimer > 0) {
+        mat.emissive.setHex(0xffffff);
+        mat.emissiveIntensity = 1.8;
+      } else {
+        mat.emissiveIntensity = 0.22;
+        mat.emissive.setHex(
+          enemy.archetype === 'interceptor' ? 0x7f1d1d : enemy.archetype === 'flanker' ? 0x0284c7 : 0xb45309
+        );
+      }
+    }
+  }
+
+  /** Periodic enemy missile launches (never during takeoff or free flight). */
+  private stepEnemyMissileTimer(
+    dt: number,
+    diffCfg: (typeof DIFFICULTY_CONFIG)[DifficultyMode],
+    aliveEnemies: number
+  ): void {
+    if (this.mode === 'freeflight' || aliveEnemies <= 0 || this.player.takeoffTimer > 0) return;
+    this.enemyMissileCooldown -= dt;
+    if (this.enemyMissileCooldown > 0) return;
+    const attacker = this.enemies.find((e) => e.alive);
+    if (attacker) this.launchEnemyMissile(attacker);
+    this.enemyMissileCooldown =
+      this.mode === 'survival'
+        ? Math.max(7.5, diffCfg.enemyMissileCooldown - this.wave * 0.4)
+        : diffCfg.enemyMissileCooldown;
+  }
+
+  /** Step tracer rounds with continuous swept segment-sphere collision. */
+  private stepBulletPool(dt: number, diffCfg: (typeof DIFFICULTY_CONFIG)[DifficultyMode]): void {
     for (let i = 0; i < this.MAX_BULLETS; i++) {
       const b = this.bullets[i];
       if (!b.active) {
@@ -1484,8 +1694,10 @@ export class FlightGameEngine {
     }
     this.bulletMesh.instanceMatrix.needsUpdate = true;
     if (this.bulletMesh.instanceColor) this.bulletMesh.instanceColor.needsUpdate = true;
+  }
 
-    // Step Guided Missiles with continuous swept collision & smoke trails
+  /** Step guided missiles: homing, smoke trails, swept collision. */
+  private stepMissilePool(dt: number, diffCfg: (typeof DIFFICULTY_CONFIG)[DifficultyMode]): void {
     for (const m of this.missiles) {
       if (!m.active) continue;
       m.life -= dt;
@@ -1496,50 +1708,9 @@ export class FlightGameEngine {
       }
 
       if (m.fromPlayer) {
-        let target = this.enemies.find((e) => e.id === m.targetEnemyId && e.alive);
-        if (!target && this.autoTargetEnabled) {
-          // Re-acquire nearest active enemy if original target was destroyed mid-flight
-          let bestDist = 1400;
-          for (const e of this.enemies) {
-            if (!e.alive) continue;
-            const d = Math.hypot(e.pos.x - m.pos.x, e.pos.y - m.pos.y, e.pos.z - m.pos.z);
-            if (d < bestDist) {
-              bestDist = d;
-              target = e;
-              m.targetEnemyId = e.id;
-            }
-          }
-        }
-        if (target) {
-          const dist = Math.hypot(target.pos.x - m.pos.x, target.pos.y - m.pos.y, target.pos.z - m.pos.z);
-          const leadSec = clamp(dist / 480, 0, 0.25);
-          const tFwd = getForwardVector(target.heading, target.pitch, _vA);
-          _vB
-            .set(
-              target.pos.x + tFwd.x * target.speed * leadSec - m.pos.x,
-              target.pos.y + tFwd.y * target.speed * leadSec - m.pos.y,
-              target.pos.z + tFwd.z * target.speed * leadSec - m.pos.z
-            )
-            .normalize();
-          const speed = m.vel.length();
-          m.vel
-            .normalize()
-            .lerp(_vB, clamp(dt * 11.5, 0, 1))
-            .normalize()
-            .multiplyScalar(Math.min(470, speed + dt * 150));
-        }
+        this.steerPlayerMissile(m, dt);
       } else {
-        if (this.player.maneuverTimer > 0) {
-          m.vel.y -= dt * 135;
-        } else {
-          _vB.set(
-            this.player.pos.x - m.pos.x,
-            this.player.pos.y - m.pos.y,
-            this.player.pos.z - m.pos.z
-          ).normalize();
-          const speed = m.vel.length();
-          m.vel.normalize().lerp(_vB, clamp(dt * diffCfg.enemyMissileTurn, 0, 1)).normalize().multiplyScalar(speed);
-        }
+        this.steerEnemyMissile(m, dt, diffCfg);
       }
 
       _vPrev.copy(m.pos);
@@ -1590,8 +1761,64 @@ export class FlightGameEngine {
         }
       }
     }
+  }
 
-    // Step Checkpoints
+  /** Home a player missile toward its target with a small predictive lead. */
+  private steerPlayerMissile(m: ActiveMissile, dt: number): void {
+    let target = this.enemies.find((e) => e.id === m.targetEnemyId && e.alive);
+    if (!target && this.autoTargetEnabled) {
+      // Re-acquire nearest active enemy if original target was destroyed mid-flight
+      let bestDist = 1400;
+      for (const e of this.enemies) {
+        if (!e.alive) continue;
+        const d = Math.hypot(e.pos.x - m.pos.x, e.pos.y - m.pos.y, e.pos.z - m.pos.z);
+        if (d < bestDist) {
+          bestDist = d;
+          target = e;
+          m.targetEnemyId = e.id;
+        }
+      }
+    }
+    if (!target) return;
+    const dist = Math.hypot(target.pos.x - m.pos.x, target.pos.y - m.pos.y, target.pos.z - m.pos.z);
+    const leadSec = clamp(dist / 480, 0, 0.25);
+    const tFwd = getForwardVector(target.heading, target.pitch, _vA);
+    _vB
+      .set(
+        target.pos.x + tFwd.x * target.speed * leadSec - m.pos.x,
+        target.pos.y + tFwd.y * target.speed * leadSec - m.pos.y,
+        target.pos.z + tFwd.z * target.speed * leadSec - m.pos.z
+      )
+      .normalize();
+    const speed = m.vel.length();
+    m.vel
+      .normalize()
+      .lerp(_vB, clamp(dt * 11.5, 0, 1))
+      .normalize()
+      .multiplyScalar(Math.min(470, speed + dt * 150));
+  }
+
+  /** Home an enemy missile at the player; a maneuver makes it dive away. */
+  private steerEnemyMissile(
+    m: ActiveMissile,
+    dt: number,
+    diffCfg: (typeof DIFFICULTY_CONFIG)[DifficultyMode]
+  ): void {
+    if (this.player.maneuverTimer > 0) {
+      m.vel.y -= dt * 135;
+    } else {
+      _vB.set(
+        this.player.pos.x - m.pos.x,
+        this.player.pos.y - m.pos.y,
+        this.player.pos.z - m.pos.z
+      ).normalize();
+      const speed = m.vel.length();
+      m.vel.normalize().lerp(_vB, clamp(dt * diffCfg.enemyMissileTurn, 0, 1)).normalize().multiplyScalar(speed);
+    }
+  }
+
+  /** Animate checkpoint rings and pay out ring-clear rewards. */
+  private stepCheckpointRings(dt: number): void {
     const nextCp = this.checkpoints.find((c) => !c.collected);
     for (const cp of this.checkpoints) {
       const mesh = this.checkpointMeshes.get(cp.id);
@@ -1616,8 +1843,10 @@ export class FlightGameEngine {
         this.showBanner(`RING ${cp.order} CLEARED (+${pts} · +20 HP)`, 1.8);
       }
     }
+  }
 
-    // Step Collectibles
+  /** Bob collectible pods and apply their pickup effects. */
+  private stepCollectiblePods(dt: number): void {
     for (const col of this.collectibles) {
       const mesh = this.collectibleMeshes.get(col.id);
       if (mesh) {
@@ -1645,8 +1874,10 @@ export class FlightGameEngine {
         }
       }
     }
+  }
 
-    // Wave / Mission Completion Checks (destroying all waves cleanly triggers Victory!)
+  /** Wave / mission completion checks (clearing all waves triggers Victory). */
+  private checkWaveProgress(aliveEnemies: number, dt: number): void {
     if (this.mode === 'missions') {
       const m = MISSIONS[this.missionIndex];
       if (aliveEnemies === 0 && this.wave < this.totalWaves) {
@@ -1682,6 +1913,10 @@ export class FlightGameEngine {
       }
     }
   }
+
+  /* ================================================================== */
+  /* Particles stepping & player rig sync                                 */
+  /* ================================================================== */
 
   private stepParticles(dt: number): void {
     for (let i = 0; i < this.MAX_PARTICLES; i++) {
@@ -1750,22 +1985,13 @@ export class FlightGameEngine {
     void dt;
   }
 
+  /* ================================================================== */
+  /* Camera                                                               */
+  /* ================================================================== */
+
   private updateCamera(dt: number): void {
     if (this.phase === 'title') {
-      this.titleClock += dt;
-      const orbitAngle = this.titleClock * 0.22 - 0.55;
-      const dist = 23;
-      const targetPos = _vA.set(
-        this.player.pos.x + Math.sin(orbitAngle) * dist,
-        this.player.pos.y + 4.8 + Math.sin(this.titleClock * 0.5) * 1.4,
-        this.player.pos.z + Math.cos(orbitAngle) * dist
-      );
-      this.camPos.lerp(targetPos, 1 - Math.exp(-4 * dt));
-      this.camLook.set(this.player.pos.x - 2, this.player.pos.y + 0.6, this.player.pos.z - 4);
-      this.camera.position.copy(this.camPos);
-      this.camera.lookAt(this.camLook);
-      this.camera.fov = damp(this.camera.fov, 52, 4, dt);
-      this.camera.updateProjectionMatrix();
+      this.updateTitleCamera(dt);
       return;
     }
 
@@ -1777,38 +2003,7 @@ export class FlightGameEngine {
       this.camera.lookAt(this.camLook);
       this.camera.rotateZ(this.player.bank * 0.75);
     } else {
-      const fwd = getForwardVector(this.player.heading, this.player.pitch, _vA);
-      const isTakeoff = this.player.takeoffTimer > 0;
-      const dist = isTakeoff ? 20 : this.cameraMode === 'action' ? 16 : 22;
-      const height = isTakeoff ? 4.5 : this.cameraMode === 'action' ? 3.8 : 5.8;
-      const sideOffset = this.cameraMode === 'action' && !isTakeoff ? 4.0 : 0;
-
-      const rx = Math.cos(this.player.heading);
-      const rz = -Math.sin(this.player.heading);
-
-      _vB.set(
-        this.player.pos.x - fwd.x * dist + rx * sideOffset,
-        this.player.pos.y - fwd.y * dist + height,
-        this.player.pos.z - fwd.z * dist + rz * sideOffset
-      );
-
-      // Ray-sampled terrain & skyscraper anti-clipping safety
-      const safe = resolveSafeCameraPosition(this.player.pos, _vB, this.world.buildingObstacles);
-      _vB.set(safe.x, safe.y, safe.z);
-
-      const stiffness = isTakeoff ? 9.5 : 11.0;
-      this.camPos.lerp(_vB, 1 - Math.exp(-stiffness * dt));
-
-      _vC.set(
-        this.player.pos.x + fwd.x * 55,
-        this.player.pos.y + fwd.y * 55 + 1.4,
-        this.player.pos.z + fwd.z * 55
-      );
-      this.camLook.lerp(_vC, 1 - Math.exp(-14 * dt));
-
-      this.camera.position.copy(this.camPos);
-      this.camera.lookAt(this.camLook);
-      this.camera.rotateZ(this.player.bank * (this.cameraMode === 'action' ? 0.32 : 0.16));
+      this.updateChaseCamera(dt);
     }
 
     if (this.trauma > 0.01) {
@@ -1824,11 +2019,74 @@ export class FlightGameEngine {
     this.camera.updateProjectionMatrix();
   }
 
-  private emitHud(): void {
+  /** Slow orbit around the parked showcase jet on the title screen. */
+  private updateTitleCamera(dt: number): void {
+    this.titleClock += dt;
+    const orbitAngle = this.titleClock * 0.22 - 0.55;
+    const dist = 23;
+    const targetPos = _vA.set(
+      this.player.pos.x + Math.sin(orbitAngle) * dist,
+      this.player.pos.y + 4.8 + Math.sin(this.titleClock * 0.5) * 1.4,
+      this.player.pos.z + Math.cos(orbitAngle) * dist
+    );
+    this.camPos.lerp(targetPos, 1 - Math.exp(-4 * dt));
+    this.camLook.set(this.player.pos.x - 2, this.player.pos.y + 0.6, this.player.pos.z - 4);
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(this.camLook);
+    this.camera.fov = damp(this.camera.fov, 52, 4, dt);
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** Chase / action follow camera with terrain & building anti-clipping. */
+  private updateChaseCamera(dt: number): void {
+    const fwd = getForwardVector(this.player.heading, this.player.pitch, _vA);
+    const isTakeoff = this.player.takeoffTimer > 0;
+    const dist = isTakeoff ? 20 : this.cameraMode === 'action' ? 16 : 22;
+    const height = isTakeoff ? 4.5 : this.cameraMode === 'action' ? 3.8 : 5.8;
+    const sideOffset = this.cameraMode === 'action' && !isTakeoff ? 4.0 : 0;
+
+    const rx = Math.cos(this.player.heading);
+    const rz = -Math.sin(this.player.heading);
+
+    _vB.set(
+      this.player.pos.x - fwd.x * dist + rx * sideOffset,
+      this.player.pos.y - fwd.y * dist + height,
+      this.player.pos.z - fwd.z * dist + rz * sideOffset
+    );
+
+    // Ray-sampled terrain & skyscraper anti-clipping safety
+    const safe = resolveSafeCameraPosition(this.player.pos, _vB, this.world.buildingObstacles);
+    _vB.set(safe.x, safe.y, safe.z);
+
+    const stiffness = isTakeoff ? 9.5 : 11.0;
+    this.camPos.lerp(_vB, 1 - Math.exp(-stiffness * dt));
+
+    _vC.set(
+      this.player.pos.x + fwd.x * 55,
+      this.player.pos.y + fwd.y * 55 + 1.4,
+      this.player.pos.z + fwd.z * 55
+    );
+    this.camLook.lerp(_vC, 1 - Math.exp(-14 * dt));
+
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(this.camLook);
+    this.camera.rotateZ(this.player.bank * (this.cameraMode === 'action' ? 0.32 : 0.16));
+  }
+
+  /* ================================================================== */
+  /* HUD snapshot                                                         */
+  /* ================================================================== */
+
+  /**
+   * Project a world point to screen space, checking camera-space
+   * coordinates FIRST so anything behind the camera never inverts
+   * through .project() — the marker is clamped to the screen edge
+   * with a direction arrow instead.
+   */
+  private projectTargets(): ProjectedTarget[] {
     const targets: ProjectedTarget[] = [];
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
-      // Check camera-space coordinates first so behind-camera directions never invert
       _vProj.set(enemy.pos.x, enemy.pos.y, enemy.pos.z).applyMatrix4(this.camera.matrixWorldInverse);
       const inFront = _vProj.z < -1.0;
       const dist = Math.hypot(
@@ -1882,40 +2140,67 @@ export class FlightGameEngine {
         lockProgress: isLockedTarget ? this.lockProgress : 0,
       });
     }
+    return targets;
+  }
 
-    const nextCp = this.checkpoints.find((c) => !c.collected) ?? null;
-    let projectedCp: ProjectedCheckpoint | null = null;
-    if (nextCp) {
-      _vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z).applyMatrix4(this.camera.matrixWorldInverse);
-      const inFront = _vProj.z < -1.0;
-      let screenX = 0.5;
-      let screenY = 0.5;
-      if (inFront) {
-        _vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z).project(this.camera);
-        screenX = clamp(_vProj.x * 0.5 + 0.5, 0.1, 0.9);
-        screenY = clamp(-_vProj.y * 0.5 + 0.5, 0.16, 0.74);
-      } else {
-        const dx = _vProj.x;
-        const dy = -_vProj.y;
-        const mag = Math.max(1e-4, Math.hypot(dx, dy));
-        screenX = clamp(0.5 + (dx / mag) * 0.4, 0.14, 0.86);
-        screenY = clamp(0.48 + (dy / mag) * 0.3, 0.18, 0.72);
-      }
-      const dist = Math.hypot(
-        nextCp.pos.x - this.player.pos.x,
-        nextCp.pos.y - this.player.pos.y,
-        nextCp.pos.z - this.player.pos.z
-      );
-      projectedCp = {
-        id: nextCp.id,
-        screenX,
-        screenY,
-        inFront,
-        distance: Math.round(dist),
-        order: nextCp.order,
-      };
+  private projectNextCheckpoint(nextCp: CheckpointState | null): ProjectedCheckpoint | null {
+    if (!nextCp) return null;
+    _vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z).applyMatrix4(this.camera.matrixWorldInverse);
+    const inFront = _vProj.z < -1.0;
+    let screenX = 0.5;
+    let screenY = 0.5;
+    if (inFront) {
+      _vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z).project(this.camera);
+      screenX = clamp(_vProj.x * 0.5 + 0.5, 0.1, 0.9);
+      screenY = clamp(-_vProj.y * 0.5 + 0.5, 0.16, 0.74);
+    } else {
+      const dx = _vProj.x;
+      const dy = -_vProj.y;
+      const mag = Math.max(1e-4, Math.hypot(dx, dy));
+      screenX = clamp(0.5 + (dx / mag) * 0.4, 0.14, 0.86);
+      screenY = clamp(0.48 + (dy / mag) * 0.3, 0.18, 0.72);
     }
+    const dist = Math.hypot(
+      nextCp.pos.x - this.player.pos.x,
+      nextCp.pos.y - this.player.pos.y,
+      nextCp.pos.z - this.player.pos.z
+    );
+    return {
+      id: nextCp.id,
+      screenX,
+      screenY,
+      inFront,
+      distance: Math.round(dist),
+      order: nextCp.order,
+    };
+  }
 
+  /** Project the aim-assist lead point; null when it sits behind the camera. */
+  private projectLeadTarget(): { screenX: number; screenY: number; distance: number } | null {
+    const leadSol = computeAimAssistLead(
+      this.player,
+      this.enemies,
+      this.lockedTargetId,
+      680,
+      this.difficulty
+    );
+    if (!leadSol) return null;
+    _vProj
+      .set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z)
+      .applyMatrix4(this.camera.matrixWorldInverse);
+    if (_vProj.z >= -1.0) return null;
+    _vProj
+      .set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z)
+      .project(this.camera);
+    return {
+      screenX: clamp(_vProj.x * 0.5 + 0.5, 0.08, 0.92),
+      screenY: clamp(-_vProj.y * 0.5 + 0.5, 0.14, 0.78),
+      distance: leadSol.distance,
+    };
+  }
+
+  /** Heading-relative radar blips for enemies, the next ring and pickups. */
+  private buildRadarBlips(nextCp: CheckpointState | null): RadarBlip[] {
     const radarRange = 1350;
     const cosH = Math.cos(this.player.heading);
     const sinH = Math.sin(this.player.heading);
@@ -1953,6 +2238,15 @@ export class FlightGameEngine {
       const { rx, rz } = toRadar(col.pos.x, col.pos.z);
       radarBlips.push({ id: 2000 + col.id, dx: rx, dz: rz, kind: 'collectible' });
     }
+    return radarBlips;
+  }
+
+  private emitHud(): void {
+    const targets = this.projectTargets();
+    const nextCp = this.checkpoints.find((c) => !c.collected) ?? null;
+    const projectedCp = this.projectNextCheckpoint(nextCp);
+    const radarBlips = this.buildRadarBlips(nextCp);
+    const leadTarget = this.projectLeadTarget();
 
     const lockedEnemy = this.enemies.find((e) => e.id === this.lockedTargetId && e.alive);
     const lockedDist = lockedEnemy
@@ -1977,30 +2271,6 @@ export class FlightGameEngine {
       }
     }
     const incomingMissile = incomingDistance !== null;
-
-    const leadSol = computeAimAssistLead(
-      this.player,
-      this.enemies,
-      this.lockedTargetId,
-      680,
-      this.difficulty
-    );
-    let leadTarget: { screenX: number; screenY: number; distance: number } | null = null;
-    if (leadSol) {
-      _vProj
-        .set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z)
-        .applyMatrix4(this.camera.matrixWorldInverse);
-      if (_vProj.z < -1.0) {
-        _vProj
-          .set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z)
-          .project(this.camera);
-        leadTarget = {
-          screenX: clamp(_vProj.x * 0.5 + 0.5, 0.08, 0.92),
-          screenY: clamp(-_vProj.y * 0.5 + 0.5, 0.14, 0.78),
-          distance: leadSol.distance,
-        };
-      }
-    }
 
     let objectiveText = 'Free Patrol — Clear Aerial Rings & Explore';
     if (this.mode === 'missions') {
@@ -2079,6 +2349,10 @@ export class FlightGameEngine {
     });
   }
 
+  /* ================================================================== */
+  /* Main loop                                                            */
+  /* ================================================================== */
+
   private tick = (now?: number): void => {
     if (this.disposed) return;
 
@@ -2122,6 +2396,7 @@ export class FlightGameEngine {
     }
   }
 
+  /** Pace software-GL frames behind a GPU fence so the tab stays responsive. */
   private afterDraw(cb: () => void): void {
     const gl = this.renderer.getContext() as WebGL2RenderingContext;
     if (!gl || !gl.fenceSync) {
@@ -2145,6 +2420,10 @@ export class FlightGameEngine {
     };
     this.frameId = window.setTimeout(poll, 5);
   }
+
+  /* ================================================================== */
+  /* DOM event handlers                                                   */
+  /* ================================================================== */
 
   private handleKeyDown = (e: KeyboardEvent): void => {
     this.sound.unlock();
@@ -2229,6 +2508,10 @@ export class FlightGameEngine {
     );
     this.renderer.render(this.scene, this.camera);
   }
+
+  /* ================================================================== */
+  /* Teardown                                                             */
+  /* ================================================================== */
 
   public dispose(): void {
     this.disposed = true;

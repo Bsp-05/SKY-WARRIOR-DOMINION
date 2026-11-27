@@ -2,6 +2,21 @@ import React, { useEffect } from 'react';
 import { DIFFICULTY_CONFIG, MISSIONS } from '../game/rules';
 import type { DifficultyMode, GameMode, JetLivery } from '../game/types';
 
+/**
+ * TitleScreen — the hangar / command briefing screen shown before a run:
+ * emblem + best score, audio toggle, mode / difficulty / mission / livery
+ * selectors, and the Launch Sortie button.
+ *
+ * Keyboard rule (fixed against an accidental-launch bug): Enter / Space
+ * only launches when focus is on the Launch Sortie button itself
+ * (`data-start="true"`) or on nothing interactive. Pressing Enter/Space
+ * while another button is focused must do nothing here — that button's
+ * own click handles it.
+ *
+ * The bottom control hint is always visible, in two centred lines, with
+ * the launch line in bold amber.
+ */
+
 interface TitleScreenProps {
   mode: GameMode;
   difficulty: DifficultyMode;
@@ -17,6 +32,10 @@ interface TitleScreenProps {
   onStart: () => void;
 }
 
+// ---------------------------------------------------------------------------
+// Static option data
+// ---------------------------------------------------------------------------
+
 const MODE_ITEMS: Array<{ id: GameMode; label: string; desc: string }> = [
   { id: 'missions', label: 'Combat Missions', desc: 'Tactical waves, recon checkpoints & time targets' },
   { id: 'survival', label: 'Survival Mode', desc: 'Endless escalating enemy squadrons' },
@@ -30,6 +49,50 @@ const LIVERY_ITEMS: Array<{ id: JetLivery; label: string; swatch: string }> = [
   { id: 'viper', label: 'Sunset Viper', swatch: '#d97706' },
   { id: 'arctic', label: 'Arctic Ghost', swatch: '#cbd5e1' },
 ];
+
+// ---------------------------------------------------------------------------
+// Small presentational pieces
+// ---------------------------------------------------------------------------
+
+/** Section heading inside the briefing panel. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <div className="text-xs font-medium text-slate-400 mb-1.5">{children}</div>;
+}
+
+/** A segmented 3-way selector row (mode / difficulty). */
+function SegmentedRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-3 gap-1.5 bg-[#070b14] p-1 rounded-lg border border-slate-800">
+      {children}
+    </div>
+  );
+}
+
+/** Wrapper for a panel section separated by a top border. */
+function PanelSection({ children }: { children: React.ReactNode }) {
+  return <div className="pt-2 border-t border-slate-800/90">{children}</div>;
+}
+
+/** The shield emblem next to the SKY WARRIOR wordmark. */
+function Emblem() {
+  return (
+    <svg viewBox="0 0 64 64" className="w-11 h-11 sm:w-13 sm:h-13 shrink-0" aria-hidden="true">
+      <polygon points="32,4 58,20 52,50 32,60 12,50 6,20" fill="#111827" stroke="#f59e0b" strokeWidth="2.5" />
+      <polygon points="32,12 46,38 32,31 18,38" fill="#f59e0b" />
+      <polygon points="32,26 52,44 32,39 12,44" fill="#e2e8f0" />
+    </svg>
+  );
+}
+
+/** Mission time limit, scaled by the selected difficulty. */
+function missionTimeText(timeLimitSec: number, timeMult: number): string {
+  const totalSec = timeLimitSec * timeMult;
+  return `${Math.floor(totalSec / 60)}m ${Math.round(totalSec % 60)}s`;
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
   mode,
@@ -45,6 +108,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onToggleMute,
   onStart,
 }) => {
+  // Enter / Space launches only from the Launch Sortie button (data-start)
+  // or from a non-interactive target — never from another focused button.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Enter' || e.code === 'Space') {
@@ -62,6 +127,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   }, [onStart]);
 
   const activeMission = MISSIONS[missionIndex] ?? MISSIONS[0];
+  const activeMode = MODE_ITEMS.find((m) => m.id === mode);
+  const showDifficulty = mode !== 'freeflight';
+  const showMissions = mode === 'missions';
 
   return (
     <div className="fixed inset-0 z-20 flex flex-col justify-between p-4 sm:p-8 pointer-events-none overflow-y-auto">
@@ -77,20 +145,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       {/* Top row: Emblem + Audio button */}
       <div className="relative z-10 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <svg
-            viewBox="0 0 64 64"
-            className="w-11 h-11 sm:w-13 sm:h-13 shrink-0"
-            aria-hidden="true"
-          >
-            <polygon
-              points="32,4 58,20 52,50 32,60 12,50 6,20"
-              fill="#111827"
-              stroke="#f59e0b"
-              strokeWidth="2.5"
-            />
-            <polygon points="32,12 46,38 32,31 18,38" fill="#f59e0b" />
-            <polygon points="32,26 52,44 32,39 12,44" fill="#e2e8f0" />
-          </svg>
+          <Emblem />
           <div>
             <h1 className="font-display text-2xl sm:text-4xl lg:text-5xl font-bold tracking-wider text-white leading-none hud-stroke">
               SKY WARRIOR
@@ -120,8 +175,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         <div className="bg-[#0b111e]/92 border border-slate-700/70 rounded-xl p-4 sm:p-5 shadow-2xl space-y-3.5">
           {/* Mode Selector */}
           <div>
-            <div className="text-xs font-medium text-slate-400 mb-1.5">Flight Mode</div>
-            <div className="grid grid-cols-3 gap-1.5 bg-[#070b14] p-1 rounded-lg border border-slate-800">
+            <SectionLabel>Flight Mode</SectionLabel>
+            <SegmentedRow>
               {MODE_ITEMS.map((item) => {
                 const active = mode === item.id;
                 return (
@@ -139,17 +194,15 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                   </button>
                 );
               })}
-            </div>
-            <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
-              {MODE_ITEMS.find((m) => m.id === mode)?.desc}
-            </p>
+            </SegmentedRow>
+            <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">{activeMode?.desc}</p>
           </div>
 
           {/* Difficulty Selector */}
-          {mode !== 'freeflight' && (
-            <div className="pt-2 border-t border-slate-800/90">
-              <div className="text-xs font-medium text-slate-400 mb-1.5">Combat Difficulty</div>
-              <div className="grid grid-cols-3 gap-1.5 bg-[#070b14] p-1 rounded-lg border border-slate-800">
+          {showDifficulty && (
+            <PanelSection>
+              <SectionLabel>Combat Difficulty</SectionLabel>
+              <SegmentedRow>
                 {DIFFICULTY_ITEMS.map((d) => {
                   const active = difficulty === d;
                   return (
@@ -167,17 +220,17 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     </button>
                   );
                 })}
-              </div>
+              </SegmentedRow>
               <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
                 {DIFFICULTY_CONFIG[difficulty].desc}
               </p>
-            </div>
+            </PanelSection>
           )}
 
           {/* Mission Briefing when Combat Missions active */}
-          {mode === 'missions' && (
-            <div className="pt-2 border-t border-slate-800/90">
-              <div className="text-xs font-medium text-slate-400 mb-1.5">Operation</div>
+          {showMissions && (
+            <PanelSection>
+              <SectionLabel>Operation</SectionLabel>
               <div className="grid grid-cols-3 gap-1.5 mb-2">
                 {MISSIONS.map((m, idx) => (
                   <button
@@ -195,25 +248,22 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 ))}
               </div>
               <div className="text-sm font-semibold text-white">{activeMission.title}</div>
-              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                {activeMission.briefing}
-              </p>
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed">{activeMission.briefing}</p>
               <div className="flex items-center gap-3 mt-1.5 text-xs font-hud text-slate-400">
                 <span>{activeMission.waves} Waves</span>
                 <span aria-hidden="true">·</span>
                 <span>{activeMission.checkpointCount} Bonus Rings</span>
                 <span aria-hidden="true">·</span>
                 <span>
-                  {Math.floor((activeMission.timeLimitSec * DIFFICULTY_CONFIG[difficulty].timeMult) / 60)}m{' '}
-                  {Math.round((activeMission.timeLimitSec * DIFFICULTY_CONFIG[difficulty].timeMult) % 60)}s
+                  {missionTimeText(activeMission.timeLimitSec, DIFFICULTY_CONFIG[difficulty].timeMult)}
                 </span>
               </div>
-            </div>
+            </PanelSection>
           )}
 
           {/* Aircraft Livery Selector */}
-          <div className="pt-2 border-t border-slate-800/90">
-            <div className="text-xs font-medium text-slate-400 mb-1.5">F-22X Livery</div>
+          <PanelSection>
+            <SectionLabel>F-22X Livery</SectionLabel>
             <div className="grid grid-cols-3 gap-1.5">
               {LIVERY_ITEMS.map((item) => {
                 const active = livery === item.id;
@@ -237,7 +287,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 );
               })}
             </div>
-          </div>
+          </PanelSection>
 
           {/* Primary Launch Action */}
           <button
@@ -251,16 +301,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
       </div>
 
-      {/* Bottom Safe-Margin Control Hint */}
-      <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300/90 hud-stroke">
+      {/* Bottom Safe-Margin Control Hint: two centered lines so the launch
+          hint is never pushed off-screen by the long controls string. */}
+      <div className="relative z-10 flex flex-col items-center gap-1 text-center text-xs text-slate-300/90 hud-stroke">
         <span className="font-hud">
           W/S Pitch · A/D Roll · Q/E Yaw · Space/LMB Cannon · F/RMB Missile · Wheel Throttle · T Auto-Target · Shift Boost · X Evade · C View
         </span>
-        <span className="hidden sm:inline text-slate-400">
-          Press Enter or Space to Launch
-        </span>
+        <span className="font-hud font-bold text-amber-300">Press Enter or Space to Launch</span>
       </div>
     </div>
   );
 };
-

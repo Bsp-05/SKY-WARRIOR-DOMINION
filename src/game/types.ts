@@ -1,16 +1,49 @@
+/**
+ * Shared types for Sky Warrior Dominion.
+ *
+ * This is the contract file: the simulation (`rules`), the 3D renderer,
+ * the HUD and the title screen all import from here, so nothing in this
+ * file may change shape without updating every consumer. Field names,
+ * unions and optionality below are the public API — add new fields with
+ * care, never rename or retype an existing one.
+ *
+ * Sections, top to bottom:
+ *   1. Mode / difficulty / phase unions — the game's top-level state
+ *   2. Vectors and player input
+ *   3. Simulation state (player, enemies, checkpoints, collectibles)
+ *   4. Projected / radar data handed to the HUD each frame
+ *   5. Missions and the per-frame HUD snapshot
+ *   6. World obstacles and the end-of-run summary
+ */
+
+// ---------------------------------------------------------------------------
+// 1. Top-level game state
+// ---------------------------------------------------------------------------
+
+/** Which game mode is selected on the title screen. */
 export type GameMode = 'missions' | 'survival' | 'freeflight';
 
+/** Combat difficulty — scales enemy count, damage and time limits. */
 export type DifficultyMode = 'beginner' | 'standard' | 'ace';
 
+/** Where the game is in its lifecycle. */
 export type GamePhase = 'title' | 'playing' | 'paused' | 'victory' | 'defeat';
 
+/** Chase / action / cockpit camera. */
 export type CameraMode = 'chase' | 'action' | 'cockpit';
 
+/** Paint scheme for the player's F-22X. */
 export type JetLivery = 'obsidian' | 'viper' | 'arctic';
 
+/** Enemy behaviour family. */
 export type EnemyArchetype = 'interceptor' | 'flanker' | 'gunship';
 
+/** What a floating pickup grants when collected. */
 export type CollectibleKind = 'repair' | 'fuel' | 'missile' | 'star';
+
+// ---------------------------------------------------------------------------
+// 2. Vectors and player input
+// ---------------------------------------------------------------------------
 
 export interface Vec3 {
   x: number;
@@ -28,6 +61,10 @@ export interface FlightInput {
   fireMissile: boolean;
   maneuver: boolean; // Barrel roll + flare countermeasures
 }
+
+// ---------------------------------------------------------------------------
+// 3. Simulation state
+// ---------------------------------------------------------------------------
 
 export interface PlayerFlightState {
   pos: Vec3;
@@ -91,6 +128,10 @@ export interface CollectibleState {
   bobPhase: number;
 }
 
+// ---------------------------------------------------------------------------
+// 4. Projected / radar data (simulation -> HUD, rebuilt every frame)
+// ---------------------------------------------------------------------------
+
 export interface ProjectedTarget {
   id: number;
   callsign: string;
@@ -123,6 +164,10 @@ export interface RadarBlip {
   isLocked?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// 5. Missions and the HUD snapshot
+// ---------------------------------------------------------------------------
+
 export interface MissionDefinition {
   id: number;
   title: string;
@@ -133,7 +178,15 @@ export interface MissionDefinition {
   timeLimitSec: number;
 }
 
+/**
+ * Everything the HUD needs, in one immutable-ish snapshot per frame.
+ * Grouped: identity / flight telemetry / combat state / mission progress /
+ * warnings & lock / feedback / projected world objects / run stats.
+ * `gunOverheated` is derived from `gunHeat` reaching its cap; the HUD
+ * shows OVERHEAT (and blocks firing) while it is true.
+ */
 export interface HudSnapshot {
+  // Identity & run context
   phase: GamePhase;
   mode: GameMode;
   difficulty: DifficultyMode;
@@ -142,12 +195,16 @@ export interface HudSnapshot {
   missionTitle: string;
   objectiveText: string;
   cameraMode: CameraMode;
+
+  // Flight telemetry
   speedKnots: number;
   altitudeMeters: number;
   headingDeg: number;
   pitchDeg: number;
   bankDeg: number;
   throttlePct: number;
+
+  // Aircraft state
   health: number;
   maxHealth: number;
   fuel: number;
@@ -159,6 +216,8 @@ export interface HudSnapshot {
   afterburner: boolean;
   maneuverReady: boolean;
   takeoffActive: boolean;
+
+  // Score & mission progress
   score: number;
   bestScore: number;
   combo: number;
@@ -170,6 +229,8 @@ export interface HudSnapshot {
   timeRemainingSec: number | null;
   checkpointsCleared: number;
   checkpointsTotal: number;
+
+  // Warnings & missile lock
   incomingWarning: boolean;
   incomingDistance: number | null;
   lowHealthWarning: boolean;
@@ -179,17 +240,27 @@ export interface HudSnapshot {
   lockedTargetCallsign: string | null;
   lockedTargetDist: number | null;
   leadTarget: { screenX: number; screenY: number; distance: number } | null;
+
+  // Transient feedback
   damageFlash: number;
   hitMarker: boolean;
   combatFeedback: { text: string; kind: 'hit' | 'crit' | 'kill' } | null;
   bannerMessage: string | null;
+
+  // Projected world objects
   targets: ProjectedTarget[];
   nextCheckpoint: ProjectedCheckpoint | null;
   radarBlips: RadarBlip[];
+
+  // Run stats (for the end-of-run screen)
   shotsFired: number;
   shotsHit: number;
   defeatReason: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// 6. World obstacles and the end-of-run summary
+// ---------------------------------------------------------------------------
 
 export interface BuildingObstacle {
   x: number;

@@ -1,5 +1,22 @@
 import * as THREE from 'three';
 
+/**
+ * Procedural textures — every surface detail in Sky Warrior Dominion is
+ * painted at runtime on 2D canvases and wrapped in THREE.CanvasTexture,
+ * so the game ships no image assets at all.
+ *
+ * Six textures are produced:
+ *   1. jetPanelBump    — fighter metal: brushed grain, panel seams, rivets
+ *   2. jetPanelAlbedo  — pale panel colour with matching seams
+ *   3. cityWindowMap / cityWindowEmissive — lit skyscraper facades
+ *   4. runwayMap       — airbase tarmac, edge lines, centreline, thresholds
+ *   5. oceanBump       — micro-wave streaks for the sea
+ *   6. particleGlow    — soft radial sprite for particles / engine glow
+ *
+ * Colour-space note: albedo / emissive maps are sRGB (they carry colour),
+ * bump maps stay linear (they carry height data, not colour).
+ */
+
 export interface ProceduralTextureSet {
   jetPanelBump: THREE.CanvasTexture;
   jetPanelAlbedo: THREE.CanvasTexture;
@@ -11,188 +28,246 @@ export interface ProceduralTextureSet {
   dispose: () => void;
 }
 
-export function createProceduralTextures(maxAnisotropy: number): ProceduralTextureSet {
-  // 1. Fighter Jet Metallic Panel Lines & Rivet Bump Map (Linear)
-  const panelBumpCanvas = document.createElement('canvas');
-  panelBumpCanvas.width = 512;
-  panelBumpCanvas.height = 512;
-  const pbCtx = panelBumpCanvas.getContext('2d')!;
-  pbCtx.fillStyle = '#888888';
-  pbCtx.fillRect(0, 0, 512, 512);
-  // Brushed grain
+// ---------------------------------------------------------------------------
+// Canvas plumbing
+// ---------------------------------------------------------------------------
+
+/** Create a blank canvas of the given size and hand back its 2D context. */
+function makeCanvas(width: number, height: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  return { canvas, ctx: canvas.getContext('2d')! };
+}
+
+/** Fill the whole canvas with one colour. */
+function fillAll(ctx: CanvasRenderingContext2D, width: number, height: number, colour: string): void {
+  ctx.fillStyle = colour;
+  ctx.fillRect(0, 0, width, height);
+}
+
+/** Draw a regular grid of panel seams, `step` px apart, in both axes. */
+function drawPanelGrid(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  step: number,
+  stroke: string,
+  lineWidth: number,
+): void {
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = lineWidth;
+  for (let x = step; x < width; x += step) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+  for (let y = step; y < height; y += step) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+}
+
+/** Wrap a texture for tiling and set its anisotropy. */
+function finishTiled(texture: THREE.CanvasTexture, repeatX: number, repeatY: number, maxAnisotropy: number): void {
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeatX, repeatY);
+  texture.anisotropy = maxAnisotropy;
+}
+
+// ---------------------------------------------------------------------------
+// 1–2. Fighter jet panels (bump + albedo share the same 64 px grid)
+// ---------------------------------------------------------------------------
+
+const PANEL_SIZE = 512;
+const PANEL_GRID = 64;
+
+function buildJetPanelBump(maxAnisotropy: number): THREE.CanvasTexture {
+  const { canvas, ctx } = makeCanvas(PANEL_SIZE, PANEL_SIZE);
+  fillAll(ctx, PANEL_SIZE, PANEL_SIZE, '#888888');
+
+  // Brushed grain: faint horizontal streaks across the whole sheet.
   for (let i = 0; i < 650; i++) {
-    const y = Math.random() * 512;
-    pbCtx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)';
-    pbCtx.fillRect(0, y, 512, 1);
+    const y = Math.random() * PANEL_SIZE;
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)';
+    ctx.fillRect(0, y, PANEL_SIZE, 1);
   }
-  // Panel seams
-  pbCtx.strokeStyle = '#303030';
-  pbCtx.lineWidth = 2;
-  for (let x = 64; x < 512; x += 64) {
-    pbCtx.beginPath();
-    pbCtx.moveTo(x, 0);
-    pbCtx.lineTo(x, 512);
-    pbCtx.stroke();
-  }
-  for (let y = 64; y < 512; y += 64) {
-    pbCtx.beginPath();
-    pbCtx.moveTo(0, y);
-    pbCtx.lineTo(512, y);
-    pbCtx.stroke();
-  }
-  // Subtle rivets
-  pbCtx.fillStyle = '#aaaaaa';
-  for (let x = 12; x < 512; x += 64) {
-    for (let y = 12; y < 512; y += 32) {
-      pbCtx.fillRect(x, y, 2, 2);
+
+  // Panel seams.
+  drawPanelGrid(ctx, PANEL_SIZE, PANEL_SIZE, PANEL_GRID, '#303030', 2);
+
+  // Subtle rivets dotted along the seams.
+  ctx.fillStyle = '#aaaaaa';
+  for (let x = 12; x < PANEL_SIZE; x += PANEL_GRID) {
+    for (let y = 12; y < PANEL_SIZE; y += 32) {
+      ctx.fillRect(x, y, 2, 2);
     }
   }
-  const jetPanelBump = new THREE.CanvasTexture(panelBumpCanvas);
-  jetPanelBump.wrapS = THREE.RepeatWrapping;
-  jetPanelBump.wrapT = THREE.RepeatWrapping;
-  jetPanelBump.repeat.set(2, 2);
-  jetPanelBump.anisotropy = maxAnisotropy;
 
-  // 2. Fighter Jet Albedo Detail Texture (SRGB)
-  const panelColorCanvas = document.createElement('canvas');
-  panelColorCanvas.width = 512;
-  panelColorCanvas.height = 512;
-  const pcCtx = panelColorCanvas.getContext('2d')!;
-  pcCtx.fillStyle = '#e5e7eb';
-  pcCtx.fillRect(0, 0, 512, 512);
-  pcCtx.strokeStyle = 'rgba(25, 30, 42, 0.24)';
-  pcCtx.lineWidth = 2;
-  for (let x = 64; x < 512; x += 64) {
-    pcCtx.beginPath();
-    pcCtx.moveTo(x, 0);
-    pcCtx.lineTo(x, 512);
-    pcCtx.stroke();
-  }
-  for (let y = 64; y < 512; y += 64) {
-    pcCtx.beginPath();
-    pcCtx.moveTo(0, y);
-    pcCtx.lineTo(512, y);
-    pcCtx.stroke();
-  }
-  const jetPanelAlbedo = new THREE.CanvasTexture(panelColorCanvas);
-  jetPanelAlbedo.colorSpace = THREE.SRGBColorSpace;
-  jetPanelAlbedo.wrapS = THREE.RepeatWrapping;
-  jetPanelAlbedo.wrapT = THREE.RepeatWrapping;
-  jetPanelAlbedo.repeat.set(2, 2);
-  jetPanelAlbedo.anisotropy = maxAnisotropy;
+  const texture = new THREE.CanvasTexture(canvas);
+  finishTiled(texture, 2, 2, maxAnisotropy);
+  return texture;
+}
 
-  // 3. Futuristic City Skyscraper Facade (Albedo + Emissive)
-  const cityCanvas = document.createElement('canvas');
-  cityCanvas.width = 256;
-  cityCanvas.height = 512;
-  const cCtx = cityCanvas.getContext('2d')!;
-  cCtx.fillStyle = '#1b2434';
-  cCtx.fillRect(0, 0, 256, 512);
+function buildJetPanelAlbedo(maxAnisotropy: number): THREE.CanvasTexture {
+  const { canvas, ctx } = makeCanvas(PANEL_SIZE, PANEL_SIZE);
+  fillAll(ctx, PANEL_SIZE, PANEL_SIZE, '#e5e7eb');
+  drawPanelGrid(ctx, PANEL_SIZE, PANEL_SIZE, PANEL_GRID, 'rgba(25, 30, 42, 0.24)', 2);
 
-  const cityEmissiveCanvas = document.createElement('canvas');
-  cityEmissiveCanvas.width = 256;
-  cityEmissiveCanvas.height = 512;
-  const ceCtx = cityEmissiveCanvas.getContext('2d')!;
-  ceCtx.fillStyle = '#000000';
-  ceCtx.fillRect(0, 0, 256, 512);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  finishTiled(texture, 2, 2, maxAnisotropy);
+  return texture;
+}
 
+// ---------------------------------------------------------------------------
+// 3. Futuristic city facade (albedo + emissive, painted in one pass)
+// ---------------------------------------------------------------------------
+
+const CITY_WIDTH = 256;
+const CITY_HEIGHT = 512;
+
+function buildCityWindows(maxAnisotropy: number): {
+  map: THREE.CanvasTexture;
+  emissive: THREE.CanvasTexture;
+} {
+  const { canvas: mapCanvas, ctx } = makeCanvas(CITY_WIDTH, CITY_HEIGHT);
+  fillAll(ctx, CITY_WIDTH, CITY_HEIGHT, '#1b2434');
+
+  const { canvas: emissiveCanvas, ctx: emissiveCtx } = makeCanvas(CITY_WIDTH, CITY_HEIGHT);
+  fillAll(emissiveCtx, CITY_WIDTH, CITY_HEIGHT, '#000000');
+
+  // Window grid: rows of 10×8 panes, some rows mostly dark, lit panes
+  // randomly cyan or warm amber. Lit panes are painted on both maps so
+  // the facade glows at dusk.
   for (let row = 8; row < 504; row += 14) {
     const litBand = Math.random() > 0.25;
     for (let col = 8; col < 248; col += 16) {
-      cCtx.fillStyle = '#26344a';
-      cCtx.fillRect(col, row, 10, 8);
+      ctx.fillStyle = '#26344a';
+      ctx.fillRect(col, row, 10, 8);
       if (litBand && Math.random() > 0.35) {
-        const isCyan = Math.random() > 0.65;
-        const winCol = isCyan ? '#67e8f9' : '#fbbf24';
-        cCtx.fillStyle = winCol;
-        cCtx.fillRect(col + 1, row + 1, 8, 6);
-        ceCtx.fillStyle = winCol;
-        ceCtx.fillRect(col + 1, row + 1, 8, 6);
+        const winCol = Math.random() > 0.65 ? '#67e8f9' : '#fbbf24';
+        ctx.fillStyle = winCol;
+        ctx.fillRect(col + 1, row + 1, 8, 6);
+        emissiveCtx.fillStyle = winCol;
+        emissiveCtx.fillRect(col + 1, row + 1, 8, 6);
       }
     }
   }
-  // Vertical architectural accent strip
-  ceCtx.fillStyle = '#38bdf8';
-  ceCtx.fillRect(4, 0, 3, 512);
-  ceCtx.fillRect(249, 0, 3, 512);
 
-  const cityWindowMap = new THREE.CanvasTexture(cityCanvas);
-  cityWindowMap.colorSpace = THREE.SRGBColorSpace;
-  cityWindowMap.wrapS = THREE.RepeatWrapping;
-  cityWindowMap.wrapT = THREE.RepeatWrapping;
-  cityWindowMap.anisotropy = maxAnisotropy;
+  // Vertical architectural accent strips down both edges (emissive only).
+  emissiveCtx.fillStyle = '#38bdf8';
+  emissiveCtx.fillRect(4, 0, 3, CITY_HEIGHT);
+  emissiveCtx.fillRect(249, 0, 3, CITY_HEIGHT);
 
-  const cityWindowEmissive = new THREE.CanvasTexture(cityEmissiveCanvas);
-  cityWindowEmissive.colorSpace = THREE.SRGBColorSpace;
-  cityWindowEmissive.wrapS = THREE.RepeatWrapping;
-  cityWindowEmissive.wrapT = THREE.RepeatWrapping;
-  cityWindowEmissive.anisotropy = maxAnisotropy;
+  const map = new THREE.CanvasTexture(mapCanvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  finishTiled(map, 1, 1, maxAnisotropy);
 
-  // 4. Airbase / Carrier Runway Markings (SRGB)
-  const runwayCanvas = document.createElement('canvas');
-  runwayCanvas.width = 256;
-  runwayCanvas.height = 1024;
-  const rCtx = runwayCanvas.getContext('2d')!;
-  rCtx.fillStyle = '#1f242d';
-  rCtx.fillRect(0, 0, 256, 1024);
-  // Subtle tarmac noise
+  const emissive = new THREE.CanvasTexture(emissiveCanvas);
+  emissive.colorSpace = THREE.SRGBColorSpace;
+  finishTiled(emissive, 1, 1, maxAnisotropy);
+  return { map, emissive };
+}
+
+// ---------------------------------------------------------------------------
+// 4. Airbase / carrier runway
+// ---------------------------------------------------------------------------
+
+function buildRunwayMap(maxAnisotropy: number): THREE.CanvasTexture {
+  const width = 256;
+  const height = 1024;
+  const { canvas, ctx } = makeCanvas(width, height);
+  fillAll(ctx, width, height, '#1f242d');
+
+  // Subtle tarmac noise.
   for (let i = 0; i < 1800; i++) {
-    rCtx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)';
-    rCtx.fillRect(Math.random() * 256, Math.random() * 1024, 3, 3);
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)';
+    ctx.fillRect(Math.random() * width, Math.random() * height, 3, 3);
   }
-  // Edge lines
-  rCtx.fillStyle = '#eab308';
-  rCtx.fillRect(14, 0, 6, 1024);
-  rCtx.fillRect(236, 0, 6, 1024);
-  // Dashed centerline
-  rCtx.fillStyle = '#f8fafc';
-  for (let y = 30; y < 990; y += 64) {
-    rCtx.fillRect(123, y, 10, 36);
-  }
-  // Threshold bars
-  for (let x = 36; x <= 204; x += 24) {
-    rCtx.fillRect(x, 930, 12, 60);
-    rCtx.fillRect(x, 30, 12, 60);
-  }
-  const runwayMap = new THREE.CanvasTexture(runwayCanvas);
-  runwayMap.colorSpace = THREE.SRGBColorSpace;
-  runwayMap.anisotropy = maxAnisotropy;
 
-  // 5. Ocean Micro-Wave Bump Texture (Linear)
-  const oceanCanvas = document.createElement('canvas');
-  oceanCanvas.width = 256;
-  oceanCanvas.height = 256;
-  const oCtx = oceanCanvas.getContext('2d')!;
-  oCtx.fillStyle = '#808080';
-  oCtx.fillRect(0, 0, 256, 256);
+  // Amber edge lines.
+  ctx.fillStyle = '#eab308';
+  ctx.fillRect(14, 0, 6, height);
+  ctx.fillRect(236, 0, 6, height);
+
+  // Dashed white centreline.
+  ctx.fillStyle = '#f8fafc';
+  for (let y = 30; y < 990; y += 64) {
+    ctx.fillRect(123, y, 10, 36);
+  }
+
+  // Threshold bars at both ends.
+  for (let x = 36; x <= 204; x += 24) {
+    ctx.fillRect(x, 930, 12, 60);
+    ctx.fillRect(x, 30, 12, 60);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = maxAnisotropy;
+  return texture;
+}
+
+// ---------------------------------------------------------------------------
+// 5. Ocean micro-wave bump
+// ---------------------------------------------------------------------------
+
+function buildOceanBump(maxAnisotropy: number): THREE.CanvasTexture {
+  const size = 256;
+  const { canvas, ctx } = makeCanvas(size, size);
+  fillAll(ctx, size, size, '#808080');
+
+  // Short horizontal wave streaks, alternating light and dark.
   for (let i = 0; i < 360; i++) {
-    const x = Math.random() * 256;
-    const y = Math.random() * 256;
+    const x = Math.random() * size;
+    const y = Math.random() * size;
     const w = 18 + Math.random() * 44;
     const h = 3 + Math.random() * 5;
-    oCtx.fillStyle = i % 2 === 0 ? 'rgba(230,230,230,0.22)' : 'rgba(35,35,35,0.22)';
-    oCtx.fillRect(x, y, w, h);
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(230,230,230,0.22)' : 'rgba(35,35,35,0.22)';
+    ctx.fillRect(x, y, w, h);
   }
-  const oceanBump = new THREE.CanvasTexture(oceanCanvas);
-  oceanBump.wrapS = THREE.RepeatWrapping;
-  oceanBump.wrapT = THREE.RepeatWrapping;
-  oceanBump.repeat.set(36, 36);
-  oceanBump.anisotropy = maxAnisotropy;
 
-  // 6. Radial Soft Particle Glow Texture (SRGB)
-  const glowCanvas = document.createElement('canvas');
-  glowCanvas.width = 128;
-  glowCanvas.height = 128;
-  const gCtx = glowCanvas.getContext('2d')!;
-  const grad = gCtx.createRadialGradient(64, 64, 2, 64, 64, 62);
+  const texture = new THREE.CanvasTexture(canvas);
+  finishTiled(texture, 36, 36, maxAnisotropy);
+  return texture;
+}
+
+// ---------------------------------------------------------------------------
+// 6. Radial soft particle glow
+// ---------------------------------------------------------------------------
+
+function buildParticleGlow(): THREE.CanvasTexture {
+  const size = 128;
+  const { canvas, ctx } = makeCanvas(size, size);
+  const grad = ctx.createRadialGradient(64, 64, 2, 64, 64, 62);
   grad.addColorStop(0, 'rgba(255,255,255,1)');
   grad.addColorStop(0.35, 'rgba(255,255,255,0.75)');
   grad.addColorStop(0.7, 'rgba(255,255,255,0.22)');
   grad.addColorStop(1, 'rgba(255,255,255,0)');
-  gCtx.fillStyle = grad;
-  gCtx.fillRect(0, 0, 128, 128);
-  const particleGlow = new THREE.CanvasTexture(glowCanvas);
-  particleGlow.colorSpace = THREE.SRGBColorSpace;
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+export function createProceduralTextures(maxAnisotropy: number): ProceduralTextureSet {
+  const jetPanelBump = buildJetPanelBump(maxAnisotropy);
+  const jetPanelAlbedo = buildJetPanelAlbedo(maxAnisotropy);
+  const { map: cityWindowMap, emissive: cityWindowEmissive } = buildCityWindows(maxAnisotropy);
+  const runwayMap = buildRunwayMap(maxAnisotropy);
+  const oceanBump = buildOceanBump(maxAnisotropy);
+  const particleGlow = buildParticleGlow();
 
   return {
     jetPanelBump,

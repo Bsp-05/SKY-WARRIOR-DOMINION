@@ -3,6 +3,55 @@
 All notable changes verified and applied in this continuation session for **SKY WARRIOR: DOMINION** are documented below.
 Baseline existing project files (existing 3D flight combat engine, world terrain, procedural textures, Web Audio synthesizer, Make.fun dossier packaging, screenshots, and MIT license) were preserved without rewriting from scratch.
 
+## [2026-11-27] Production build, cockpit HUD fixes & fresh screenshots (Tasya session)
+
+### Fixed
+- **Cockpit canopy bow frame covering the top HUD (`src/components/MilitaryHud.tsx`)**:
+  The diegetic canopy SVG was painted after the HUD header in DOM order, so its
+  dark band (55% opaque, dipping to y=210 at the edges) dimmed and crossed the
+  `HDG / Operation / timer` pill in cockpit camera mode. The header now stacks
+  above the canopy (`z-20` vs `z-0`), the bow is flattened (edges y=120, centre
+  y=40) and lightened to 42% opacity, so the whole top bar stays readable.
+- **Lock-status text colliding with target markers (`src/components/MilitaryHud.tsx`)**:
+  The `TARGET LOCKED / LOCKING` label above the crosshair now sits in a dark
+  pill (`bg-[#090f1d]/85` with a border) and is lifted to `-top-9`, so it stays
+  legible when a target box or checkpoint ring passes behind it.
+- **Projected markers colliding with the mission banner (`src/components/MilitaryHud.tsx`)**:
+  Desktop `markerMinY` raised from 0.14 to 0.19 so enemy / ring markers stay
+  below the header and `OPERATION … — WAVE 1` banner.
+- **Title-screen launch hint cut off (`src/components/TitleScreen.tsx`)**:
+  The bottom hint was a `justify-between` row whose long controls string pushed
+  `Press Enter or Space to Launch` off the right edge. It is now two centred
+  lines, with the launch hint in bold amber, always visible.
+
+### Verified locally in this session — ready to push, blocked on GitHub App access
+- Unit tests: `npx tsx --test src/game/rules.test.ts` → **14/14 pass**.
+- Lint: `npm run lint` (`tsc --noEmit`) → **0 errors**.
+- Builds: `npm run build` and `npm run build:game` → **both pass**.
+- The committed `game/` was a development build (React `jsxDEV`,
+  `scheduler.development.js`, `/app/applet` source paths in the bundle). This
+  working tree carries the production rebuild with the locked toolchain
+  (`bun install --frozen-lockfile`, Vite 8.3.8, Three.js 0.187.0): `jsx`
+  runtime, `scheduler.production.js`, no leaked sandbox paths,
+  `game/src/index.js` 2647 → 1591 lines, `game/vendor/libs.min.js`
+  5556 → 4638 lines.
+- Playwright (Chromium 159, SwiftShader) play-test of the production `game/`:
+  all four `?shot=` modes render a 1280x720 canvas with **0 console errors**,
+  and a real click-through (LAUNCH SORTIE + throttle) plays with **0 console errors**.
+- Fresh screenshots retaken with Playwright and installed as `screenshots/`:
+  cover combat (chase), cockpit HUD (fixed top bar), runway takeoff (live
+  playthrough via `?autostart=1`, jet on the runway with afterburner), title
+  hangar (launch hint now fully visible). All 1280x720 JPEG, 171–184 KB.
+- Kit check (`node cli/makefun.mjs check --kit . --repo . --worktree`):
+  **4 passed, 1 failed (transcripts_present — bundled by the top-level agent
+  at submit time), 15 skipped**; `vendor/makefun-game.ts` verified unchanged
+  against the kit starter; `.makefun/owner.json` wallet `692rgf…` verified as
+  an agent wallet on the @bsp05 make.fun account, so it is kept as-is.
+- **Not pushed yet:** both GitHub write paths return
+  `403 Resource not accessible by integration` — the Muse GitHub App has not
+  been granted access to `Bsp-05/SKY-WARRIOR-DOMINION`. Grant it at the App
+  installation page, then push this working tree (10 files) and submit.
+
 ## [2026-11-27] Continuation Audit, Bug Fixes & Responsive Polish
 
 ### Fixed

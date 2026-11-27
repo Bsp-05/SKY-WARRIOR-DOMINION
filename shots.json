@@ -1,6 +1,6 @@
 [
   { "name": "1-cover-combat.jpg", "query": "?shot=play" },
   { "name": "2-cockpit-hud.jpg", "query": "?shot=cockpit" },
-  { "name": "3-runway-takeoff.jpg", "query": "?shot=takeoff" },
+  { "name": "3-runway-takeoff.jpg", "query": "?autostart=1" },
   { "name": "4-title-hangar.jpg", "query": "?shot=start" }
 ]

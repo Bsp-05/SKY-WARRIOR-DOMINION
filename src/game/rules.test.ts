@@ -1,3 +1,10 @@
+// Unit tests for the pure game rules in ./rules.ts.
+//
+// These tests never touch the renderer: they step the flight model,
+// enemy AI, targeting and collision helpers directly, frame by frame,
+// and assert on the resulting state. Each test builds its own fresh
+// player / enemy state so tests stay independent of each other.
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -20,6 +27,11 @@ import {
 } from './rules';
 import type { EnemyUnitState, FlightInput } from './types';
 
+// --- Shared fixtures --------------------------------------------------------
+// A neutral stick: no pitch / roll / yaw, throttle untouched, no weapons,
+// no boost, no maneuver. Individual tests spread this and override one
+// or two fields, so the intent of each step is visible at the call site.
+
 const neutralInput: FlightInput = {
   pitch: 0,
   roll: 0,
@@ -30,6 +42,32 @@ const neutralInput: FlightInput = {
   fireMissile: false,
   maneuver: false,
 };
+
+/** A generic live interceptor; callers override id / position / archetype. */
+function makeEnemy(overrides: Partial<EnemyUnitState> = {}): EnemyUnitState {
+  return {
+    id: 1,
+    archetype: 'interceptor',
+    callsign: 'VIPER-1',
+    pos: { x: 0, y: 120, z: -120 },
+    heading: 0,
+    pitch: 0,
+    bank: 0,
+    speed: 100,
+    health: 60,
+    maxHealth: 60,
+    fireCooldown: 1,
+    telegraphTimer: 0,
+    aiPhaseOffset: 0,
+    evadeTimer: 0,
+    alive: true,
+    dyingTimer: 0,
+    hitFlashTimer: 0,
+    ...overrides,
+  };
+}
+
+// --- Orientation and basic flight -------------------------------------------
 
 test('forward vector at heading 0, pitch 0 points along -Z', () => {
   const fwd = getForwardVector(0, 0);
@@ -74,27 +112,11 @@ test('pitch and roll controls change orientation and turn heading', () => {
   assert.notEqual(player.heading, initialHeading);
 });
 
+// --- Targeting and enemy AI -------------------------------------------------
+
 test('target locking acquires enemy inside forward cone and completes lock', () => {
   const player = createInitialPlayerState(true);
-  const enemy: EnemyUnitState = {
-    id: 1,
-    archetype: 'interceptor',
-    callsign: 'VIPER-1',
-    pos: { x: 0, y: 120, z: -120 },
-    heading: 0,
-    pitch: 0,
-    bank: 0,
-    speed: 100,
-    health: 60,
-    maxHealth: 60,
-    fireCooldown: 1,
-    telegraphTimer: 0,
-    aiPhaseOffset: 0,
-    evadeTimer: 0,
-    alive: true,
-    dyingTimer: 0,
-    hitFlashTimer: 0,
-  };
+  const enemy = makeEnemy({ id: 1, pos: { x: 0, y: 120, z: -120 } });
 
   let lockId: number | null = null;
   let progress = 0;
@@ -114,33 +136,19 @@ test('target locking acquires enemy inside forward cone and completes lock', () 
 
 test('distinct enemy AI archetypes move independently and respect terrain clearance', () => {
   const player = createInitialPlayerState(true);
-  const interceptor: EnemyUnitState = {
+  const interceptor = makeEnemy({
     id: 1,
-    archetype: 'interceptor',
-    callsign: 'VIPER-1',
     pos: { x: 200, y: 140, z: -300 },
     heading: Math.PI,
-    pitch: 0,
-    bank: 0,
-    speed: 100,
-    health: 60,
-    maxHealth: 60,
-    fireCooldown: 0,
-    telegraphTimer: 0,
-    aiPhaseOffset: 0,
-    evadeTimer: 0,
-    alive: true,
-    dyingTimer: 0,
-    hitFlashTimer: 0,
-  };
-  const flanker: EnemyUnitState = {
-    ...interceptor,
+  });
+  const flanker = makeEnemy({
     id: 2,
     archetype: 'flanker',
     callsign: 'SPECTRE-2',
     pos: { x: -200, y: 140, z: -300 },
+    heading: Math.PI,
     aiPhaseOffset: 1.5,
-  };
+  });
 
   for (let i = 0; i < 40; i++) {
     stepEnemyAI(interceptor, player, i * 0.04, 0.04, true);
@@ -151,6 +159,8 @@ test('distinct enemy AI archetypes move independently and respect terrain cleara
   assert.ok(interceptor.pos.y >= minGround);
   assert.notEqual(Math.round(interceptor.pos.x), Math.round(flanker.pos.x));
 });
+
+// --- Collisions, scoring and camera -----------------------------------------
 
 test('checkpoints, mission rank, and camera obstacle avoidance behave deterministically', () => {
   const checkpoints = generateCheckpoints(4);
@@ -165,7 +175,7 @@ test('checkpoints, mission rank, and camera obstacle avoidance behave determinis
   const safeCam = resolveSafeCameraPosition(
     { x: 0, y: 40, z: 0 },
     { x: 0, y: 38, z: 25 },
-    [{ x: 0, z: 22, halfW: 10, halfD: 10, topY: 50 }]
+    [{ x: 0, z: 22, halfW: 10, halfD: 10, topY: 50 }],
   );
   assert.ok(safeCam.y >= 54 || safeCam.z < 22, 'Camera should clear building obstacle');
 });
@@ -174,41 +184,30 @@ test('swept projectile collision catches fast bullets and building collision det
   // Bullet starts 15m before target and ends 15m past target (would tunnel under point-only check)
   assert.equal(
     checkSegmentSphereCollision({ x: 0, y: 100, z: 15 }, { x: 0, y: 100, z: -15 }, { x: 0, y: 100, z: 0 }, 8),
-    true
+    true,
   );
   assert.equal(
     checkSegmentSphereCollision({ x: 30, y: 100, z: 15 }, { x: 30, y: 100, z: -15 }, { x: 0, y: 100, z: 0 }, 8),
-    false
+    false,
   );
 
   const hit = checkPlayerBuildingCollision(
     { x: 202, y: 60, z: -100 },
-    [{ x: 200, z: -100, halfW: 10, halfD: 10, topY: 95 }]
+    [{ x: 200, z: -100, halfW: 10, halfD: 10, topY: 95 }],
   );
   assert.ok(hit !== null, 'Jet inside tower footprint below roof should collide');
 });
 
 test('evasive enemy accelerates and jinks, and dying enemy detonates at terrain level', () => {
   const player = createInitialPlayerState(true);
-  const evading: EnemyUnitState = {
+  const evading = makeEnemy({
     id: 9,
-    archetype: 'interceptor',
     callsign: 'VIPER-9',
     pos: { x: 0, y: 180, z: -200 },
-    heading: 0,
-    pitch: 0,
-    bank: 0,
     speed: 105,
     health: 30,
-    maxHealth: 60,
-    fireCooldown: 1,
-    telegraphTimer: 0,
-    aiPhaseOffset: 0,
     evadeTimer: 1.2,
-    alive: true,
-    dyingTimer: 0,
-    hitFlashTimer: 0,
-  };
+  });
   for (let i = 0; i < 15; i++) {
     stepEnemyAI(evading, player, i * 0.04, 0.04, true);
   }
@@ -222,48 +221,33 @@ test('evasive enemy accelerates and jinks, and dying enemy detonates at terrain 
   assert.equal(evading.dyingTimer, 0, 'Dying enemy hitting ocean/terrain should detonate immediately');
 });
 
+// --- Auto-target and assisted pursuit ---------------------------------------
+
 test('auto-target selects nearest active enemy off-boresight, auto-locks, and switches on kill', () => {
   const player = createInitialPlayerState(true, 'beginner');
-  const nearBehind: EnemyUnitState = {
+  const nearBehind = makeEnemy({
     id: 10,
-    archetype: 'interceptor',
     callsign: 'VIPER-10',
     pos: { x: 180, y: 140, z: 520 }, // Behind player (player at z=320 facing -Z)
-    heading: 0,
-    pitch: 0,
-    bank: 0,
-    speed: 100,
     health: 40,
     maxHealth: 40,
     fireCooldown: 2,
-    telegraphTimer: 0,
-    aiPhaseOffset: 0,
-    evadeTimer: 0,
-    alive: true,
-    dyingTimer: 0,
-    hitFlashTimer: 0,
-  };
-  const farEnemy: EnemyUnitState = {
-    ...nearBehind,
+  });
+  const farEnemy = makeEnemy({
     id: 11,
     callsign: 'SPECTRE-11',
     pos: { x: -420, y: 180, z: -650 },
-  };
+    health: 40,
+    maxHealth: 40,
+    fireCooldown: 2,
+  });
 
   let lockId: number | null = null;
   let progress = 0;
   let isLocked = false;
 
   for (let i = 0; i < 16; i++) {
-    const res = evaluateTargetLock(
-      player,
-      [farEnemy, nearBehind],
-      lockId,
-      progress,
-      0.05,
-      'beginner',
-      true
-    );
+    const res = evaluateTargetLock(player, [farEnemy, nearBehind], lockId, progress, 0.05, 'beginner', true);
     lockId = res.lockedId;
     progress = res.lockProgress;
     isLocked = res.isLocked;
@@ -274,39 +258,20 @@ test('auto-target selects nearest active enemy off-boresight, auto-locks, and sw
 
   // Destroy current target -> immediately switches to remaining enemy
   nearBehind.alive = false;
-  const switched = evaluateTargetLock(
-    player,
-    [farEnemy, nearBehind],
-    lockId,
-    progress,
-    0.05,
-    'beginner',
-    true
-  );
+  const switched = evaluateTargetLock(player, [farEnemy, nearBehind], lockId, progress, 0.05, 'beginner', true);
   assert.equal(switched.lockedId, 11, 'Auto-target should switch immediately when target is destroyed');
 });
 
 test('assisted pursuit turns smoothly toward target, yields to manual joystick, and avoids terrain/buildings', () => {
   const player = createInitialPlayerState(true, 'beginner');
-  const target: EnemyUnitState = {
+  const target = makeEnemy({
     id: 21,
-    archetype: 'interceptor',
     callsign: 'VIPER-21',
     pos: { x: 450, y: 210, z: 320 }, // Directly to the right (+X)
-    heading: 0,
-    pitch: 0,
-    bank: 0,
-    speed: 100,
     health: 50,
     maxHealth: 50,
     fireCooldown: 2,
-    telegraphTimer: 0,
-    aiPhaseOffset: 0,
-    evadeTimer: 0,
-    alive: true,
-    dyingTimer: 0,
-    hitFlashTimer: 0,
-  };
+  });
 
   const startHeading = player.heading;
   for (let i = 0; i < 10; i++) {
@@ -316,20 +281,13 @@ test('assisted pursuit turns smoothly toward target, yields to manual joystick, 
   assert.ok(
     Math.abs(normalizeAngle(desiredHeading - player.heading)) <
       Math.abs(normalizeAngle(desiredHeading - startHeading)),
-    'Assisted pursuit should turn jet heading closer to target'
+    'Assisted pursuit should turn jet heading closer to target',
   );
 
   // Full manual stick input should override assisted pursuit completely
   const manualPlayer = createInitialPlayerState(true, 'beginner');
   const beforeHeading = manualPlayer.heading;
-  applyAssistedPursuit(
-    manualPlayer,
-    target,
-    { ...neutralInput, roll: -1, pitch: 0.8 },
-    [],
-    0.04,
-    true
-  );
+  applyAssistedPursuit(manualPlayer, target, { ...neutralInput, roll: -1, pitch: 0.8 }, [], 0.04, true);
   assert.equal(manualPlayer.heading, beforeHeading, 'Full manual input overrides pursuit steering');
 
   // Low-altitude terrain/building hazard ahead forces upward pitch clearance
@@ -343,6 +301,8 @@ test('assisted pursuit turns smoothly toward target, yields to manual joystick, 
   }
   assert.ok(lowPlayer.pitch > 0, 'Assisted pursuit must pull nose up above terrain and skyscrapers');
 });
+
+// --- Damage model, weapons and fuel -----------------------------------------
 
 test('dive bounce cooldown prevents unfair instant multi-frame crashes and lead aim predicts target motion', () => {
   const player = createInitialPlayerState(true, 'beginner');
@@ -358,25 +318,16 @@ test('dive bounce cooldown prevents unfair instant multi-frame crashes and lead 
   assert.equal(scrapes, 1, 'Collision cooldown should allow only 1 mild scrape across consecutive frames');
   assert.equal(player.health, 100 - DIFFICULTY_CONFIG.beginner.scrapeDmg);
 
-  const movingTarget: EnemyUnitState = {
+  const movingTarget = makeEnemy({
     id: 30,
-    archetype: 'interceptor',
     callsign: 'VIPER-30',
     pos: { x: 40, y: 120, z: 0 },
     heading: -Math.PI / 2, // moving +X
-    pitch: 0,
-    bank: 0,
     speed: 120,
     health: 50,
     maxHealth: 50,
     fireCooldown: 2,
-    telegraphTimer: 0,
-    aiPhaseOffset: 0,
-    evadeTimer: 0,
-    alive: true,
-    dyingTimer: 0,
-    hitFlashTimer: 0,
-  };
+  });
   const lead = computeAimAssistLead(player, [movingTarget], 30, 680, 'beginner');
   // Re-position player behind movingTarget so it's inside forward cone
   player.pos = { x: 0, y: 120, z: 320 };
@@ -414,5 +365,3 @@ test('freeflight mode regenerates fuel without triggering fuel depletion defeat'
   }
   assert.ok(player.fuel > 25, 'Free Flight should replenish fuel during cruise');
 });
-
-

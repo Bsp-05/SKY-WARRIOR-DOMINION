@@ -1,5 +1,16 @@
+/* ------------------------------------------------------------------ */
+/* Sky Warrior Dominion — global styles                               */
+/*                                                                    */
+/* Tailwind supplies the utility classes used across the HUD and      */
+/* screens. The rules below are the only hand-written CSS: a          */
+/* full-screen, non-scrolling app shell (the game owns the whole      */
+/* viewport and handles its own touch input) plus the display / HUD   */
+/* font helpers referenced by class name throughout the components.   */
+/* ------------------------------------------------------------------ */
 @import "tailwindcss";
 
+/* App shell: the game fills the viewport exactly, with no page scroll
+ * or browser touch gestures (pull-to-refresh, pan) stealing input. */
 @layer base {
   html,
   body,
@@ -15,16 +26,19 @@
   }
 }
 
+/* Display type: headings, titles and big buttons (Chakra Petch). */
 .font-display {
   font-family: 'Chakra Petch', sans-serif;
 }
 
+/* HUD type: readouts, labels and buttons (JetBrains Mono, with
+ * tabular figures so numbers do not jitter as they change). */
 .font-hud {
   font-family: 'JetBrains Mono', monospace;
   font-variant-numeric: tabular-nums;
 }
 
+/* Legibility for HUD text drawn over the 3D scene. */
 .hud-stroke {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 10px rgba(0, 0, 0, 0.6);
 }
-

@@ -1,3 +1,24 @@
+// ---------------------------------------------------------------------------
+// Sky Warrior Dominion — pure game rules
+// ---------------------------------------------------------------------------
+// This module holds every piece of gameplay logic that can be reasoned
+// about without a renderer: flight physics, weapons, fuel, enemy AI,
+// targeting, terrain, collisions and mission scoring.
+//
+// Design notes for future readers:
+//  * Nothing in here touches the DOM, WebGL, audio or input devices. The
+//    engine feeds this module a `FlightInput` and a delta-time each frame
+//    and reads back the mutated player / enemy state.
+//  * All state mutation is explicit and in-place: the engine owns the
+//    objects, these functions advance them. That keeps the hot loop free
+//    of allocations (apart from the few small result objects returned).
+//  * Every frame-rate-sensitive step clamps `dt` to 0.05s first, so a
+//    hitch or a tab switch can never teleport a jet through a mountain.
+//  * Difficulty is data, not branching: one `DifficultyConfig` per mode
+//    drives damage, lock speed, reload time and enemy aggression, so
+//    tuning a mode means editing one table row, not hunting through code.
+// ---------------------------------------------------------------------------
+
 import type {
   BuildingObstacle,
   CheckpointState,
@@ -12,10 +33,18 @@ import type {
   Vec3,
 } from './types';
 
+// --- World limits -----------------------------------------------------------
+
+/** Half-width of the playable ocean / island area, in metres. */
 export const WORLD_RADIUS = 2400;
+/** Sea level; terrain below this is ocean and the ground floor is 0. */
 export const OCEAN_LEVEL = 0;
+/** Lowest altitude a jet is allowed to sustain in normal flight. */
 export const MIN_FLIGHT_ALTITUDE = 8;
+/** Soft ceiling — the jet is gently levelled off above this height. */
 export const MAX_FLIGHT_ALTITUDE = 780;
+
+// --- Difficulty -------------------------------------------------------------
 
 export interface DifficultyConfig {
   label: string;
@@ -39,6 +68,12 @@ export interface DifficultyConfig {
   missileReloadSec: number;
 }
 
+/**
+ * One tuning row per difficulty. Beginner is forgiving (strong lock-on,
+ * heavy aim assist, gentle enemies, slow reload pressure); Ace is the
+ * opposite — tougher enemies, faster incoming missiles and a longer
+ * missile reload, in exchange for the same airframe.
+ */
 export const DIFFICULTY_CONFIG: Record<DifficultyMode, DifficultyConfig> = {
   beginner: {
     label: 'Beginner',
@@ -105,6 +140,8 @@ export const DIFFICULTY_CONFIG: Record<DifficultyMode, DifficultyConfig> = {
   },
 };
 
+// --- Missions ---------------------------------------------------------------
+
 export const MISSIONS: MissionDefinition[] = [
   {
     id: 0,
@@ -138,6 +175,8 @@ export const MISSIONS: MissionDefinition[] = [
   },
 ];
 
+// --- Small math helpers -----------------------------------------------------
+
 export function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
@@ -146,6 +185,7 @@ export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+/** Wraps any angle into (-PI, PI]. */
 export function normalizeAngle(rad: number): number {
   let a = rad;
   while (a > Math.PI) a -= Math.PI * 2;
@@ -153,76 +193,103 @@ export function normalizeAngle(rad: number): number {
   return a;
 }
 
+/** Frame-rate-independent exponential approach toward a target value. */
 export function damp(current: number, target: number, lambda: number, dt: number): number {
   return lerp(current, target, 1 - Math.exp(-lambda * dt));
 }
 
-/**
- * Deterministic multi-island + volcanic mountain height function shared
- * between the 3D terrain mesh and flight collision physics.
- */
-export function sampleTerrainHeight(x: number, z: number): number {
-  // Flat runway plateau around (-60..60, -140..140) on the main Citadel Island
-  const runwayDistX = Math.max(0, Math.abs(x) - 55);
-  const runwayDistZ = Math.max(0, Math.abs(z - 40) - 190);
-  const runwayFlatFactor = Math.exp(-(runwayDistX * runwayDistX + runwayDistZ * runwayDistZ) / 9500);
-
-  // Island 1: Central Citadel & Airbase Island around (0, 0)
-  const dCenter = Math.hypot(x, z);
-  const island1 = Math.max(0, 1 - dCenter / 560);
-
-  // Island 2: Volcanic Peak North-West (-820, -680)
-  const dVolcano = Math.hypot(x + 820, z + 680);
-  const volcanoBase = Math.max(0, 1 - dVolcano / 520);
-  const volcanoPeak = Math.pow(volcanoBase, 1.55) * 265;
-
-  // Island 3: Twin Spires East (860, -360)
-  const dEast = Math.hypot(x - 860, z + 360);
-  const eastBase = Math.max(0, 1 - dEast / 440);
-  const eastPeak = Math.pow(eastBase, 1.45) * 195;
-
-  // Island 4: Southern Atoll Ridge (-460, 880)
-  const dSouth = Math.hypot(x + 460, z - 880);
-  const southBase = Math.max(0, 1 - dSouth / 460);
-  const southPeak = Math.pow(southBase, 1.5) * 165;
-
-  // Island 5: Distant Canyon Massif (780, 760)
-  const dSE = Math.hypot(x - 780, z - 760);
-  const seBase = Math.max(0, 1 - dSE / 480);
-  const sePeak = Math.pow(seBase, 1.6) * 215;
-
-  // Organic multi-octave ridges
-  const ridge1 = Math.sin(x * 0.0085 + 0.4) * Math.cos(z * 0.0078 - 0.3) * 22;
-  const ridge2 = Math.sin(x * 0.021 - z * 0.017) * 11;
-  const ridge3 = Math.cos(x * 0.043 + z * 0.039) * 4.5;
-
-  const island1Height = Math.pow(island1, 1.35) * 32;
-  const landMask = Math.max(island1, volcanoBase, eastBase, southBase, seBase);
-
-  let h =
-    -14 +
-    island1Height +
-    volcanoPeak +
-    eastPeak +
-    southPeak +
-    sePeak +
-    (ridge1 + ridge2 + ridge3) * Math.min(1, landMask * 2.2);
-
-  // Carve smooth crater at top of NW Volcano
-  if (dVolcano < 95) {
-    const craterFactor = 1 - dVolcano / 95;
-    h -= craterFactor * craterFactor * 52;
-  }
-
-  // Keep central runway & city plateau level at y = 14
-  if (runwayFlatFactor > 0.02) {
-    h = lerp(h, 14, clamp(runwayFlatFactor * 1.15, 0, 1));
-  }
-
-  return h;
+/** Euclidean distance between two points. Kept internal; hot paths inline it. */
+function distanceBetween(a: Vec3, b: Vec3): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
-export function getForwardVector(heading: number, pitch: number, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
+/** Counts a timer down toward zero, never below it. Returns the new value. */
+function tickDown(timer: number, dt: number): number {
+  return timer > 0 ? Math.max(0, timer - dt) : timer;
+}
+
+// --- Terrain ----------------------------------------------------------------
+
+/**
+ * How far a point sits inside a circular island falloff: 1 at the centre,
+ * fading linearly to 0 at the island's edge, and 0 beyond it.
+ */
+function islandFalloff(x: number, z: number, centreX: number, centreZ: number, radius: number): number {
+  return Math.max(0, 1 - Math.hypot(x - centreX, z - centreZ) / radius);
+}
+
+/**
+ * Deterministic multi-island + volcanic mountain height function, shared
+ * between the 3D terrain mesh and flight collision physics. It must stay
+ * a pure function of (x, z): the mesh and the physics must always agree
+ * about where the ground is, or jets would clip through visible hills.
+ *
+ * Layout (all heights in metres, sea level is 0):
+ *  - a flat runway plateau on the central Citadel island, pinned at y = 14
+ *  - a volcanic peak to the north-west, with a crater carved into its top
+ *  - twin spires to the east, a southern atoll ridge, and a south-east
+ *    canyon massif, each a smooth powered falloff
+ *  - low-amplitude multi-octave ridges for organic variation on land
+ */
+export function sampleTerrainHeight(x: number, z: number): number {
+  // Runway plateau: distance outside the flat rectangle around (0, 40).
+  const outsideRunwayX = Math.max(0, Math.abs(x) - 55);
+  const outsideRunwayZ = Math.max(0, Math.abs(z - 40) - 190);
+  const runwayFlatFactor = Math.exp(
+    -(outsideRunwayX * outsideRunwayX + outsideRunwayZ * outsideRunwayZ) / 9500,
+  );
+
+  // Island falloffs — each one is 1 at its centre and 0 at its shoreline.
+  const centre = islandFalloff(x, z, 0, 0, 560); // Central Citadel & Airbase
+  const volcano = islandFalloff(x, z, -820, -680, 520); // Volcanic Peak NW
+  const east = islandFalloff(x, z, 860, -360, 440); // Twin Spires East
+  const south = islandFalloff(x, z, -460, 880, 460); // Southern Atoll Ridge
+  const southEast = islandFalloff(x, z, 780, 760, 480); // Distant Canyon Massif
+
+  // Powered peaks: the exponent sharpens each island into a mountain.
+  const volcanoPeak = Math.pow(volcano, 1.55) * 265;
+  const eastPeak = Math.pow(east, 1.45) * 195;
+  const southPeak = Math.pow(south, 1.5) * 165;
+  const southEastPeak = Math.pow(southEast, 1.6) * 215;
+  const centreHeight = Math.pow(centre, 1.35) * 32;
+
+  // Organic ridges, masked so they only roughen land, never the ocean.
+  const landMask = Math.max(centre, volcano, east, south, southEast);
+  const ridge =
+    (Math.sin(x * 0.0085 + 0.4) * Math.cos(z * 0.0078 - 0.3) * 22 +
+      Math.sin(x * 0.021 - z * 0.017) * 11 +
+      Math.cos(x * 0.043 + z * 0.039) * 4.5) *
+    Math.min(1, landMask * 2.2);
+
+  let height = -14 + centreHeight + volcanoPeak + eastPeak + southPeak + southEastPeak + ridge;
+
+  // Carve a smooth crater into the top of the north-west volcano.
+  const volcanoDist = Math.hypot(x + 820, z + 680);
+  if (volcanoDist < 95) {
+    const craterFactor = 1 - volcanoDist / 95;
+    height -= craterFactor * craterFactor * 52;
+  }
+
+  // Blend the central runway and city plateau flat to y = 14.
+  if (runwayFlatFactor > 0.02) {
+    height = lerp(height, 14, clamp(runwayFlatFactor * 1.15, 0, 1));
+  }
+
+  return height;
+}
+
+// --- Orientation ------------------------------------------------------------
+
+/**
+ * Forward unit vector for a heading (yaw, 0 = facing -Z) and pitch
+ * (positive = nose up). Writes into `out` when supplied so callers in
+ * the hot loop can reuse one vector instead of allocating per frame.
+ */
+export function getForwardVector(
+  heading: number,
+  pitch: number,
+  out: Vec3 = { x: 0, y: 0, z: 0 },
+): Vec3 {
   const cosP = Math.cos(pitch);
   out.x = -Math.sin(heading) * cosP;
   out.y = Math.sin(pitch);
@@ -230,42 +297,18 @@ export function getForwardVector(heading: number, pitch: number, out: Vec3 = { x
   return out;
 }
 
-export function createInitialPlayerState(
-  skipTakeoff = false,
-  difficulty: DifficultyMode = 'beginner'
-): PlayerFlightState {
+// --- Player setup -----------------------------------------------------------
+
+/** Shared defaults for a fresh player state; the two spawn modes differ below. */
+function basePlayerState(difficulty: DifficultyMode): PlayerFlightState {
   const maxMissiles = DIFFICULTY_CONFIG[difficulty].maxMissiles;
-  if (skipTakeoff) {
-    return {
-      pos: { x: 0, y: 120, z: 320 },
-      heading: 0,
-      pitch: 0.02,
-      bank: 0,
-      speed: 135,
-      throttle: 0.65,
-      health: 100,
-      maxHealth: 100,
-      fuel: 100,
-      maxFuel: 100,
-      missiles: maxMissiles,
-      maxMissiles,
-      missileReloadTimer: 0,
-      flaresCooldown: 0,
-      maneuverTimer: 0,
-      maneuverCooldown: 0,
-      gunHeat: 0,
-      afterburnerActive: false,
-      takeoffTimer: 0,
-      collisionCooldown: 0,
-    };
-  }
   return {
-    pos: { x: 0, y: 18.2, z: 210 },
+    pos: { x: 0, y: 120, z: 320 },
     heading: 0,
-    pitch: 0.01,
+    pitch: 0.02,
     bank: 0,
-    speed: 48,
-    throttle: 0.85,
+    speed: 135,
+    throttle: 0.65,
     health: 100,
     maxHealth: 100,
     fuel: 100,
@@ -277,10 +320,219 @@ export function createInitialPlayerState(
     maneuverTimer: 0,
     maneuverCooldown: 0,
     gunHeat: 0,
-    afterburnerActive: true,
-    takeoffTimer: 2.6,
+    afterburnerActive: false,
+    takeoffTimer: 0,
     collisionCooldown: 0,
   };
+}
+
+export function createInitialPlayerState(
+  skipTakeoff = false,
+  difficulty: DifficultyMode = 'beginner',
+): PlayerFlightState {
+  const state = basePlayerState(difficulty);
+
+  if (skipTakeoff) {
+    // Airborne start (used by tests and Free Flight): already at cruise.
+    return state;
+  }
+
+  // Runway start: slow, nose level, afterburner lit for the takeoff roll.
+  state.pos = { x: 0, y: 18.2, z: 210 };
+  state.pitch = 0.01;
+  state.speed = 48;
+  state.throttle = 0.85;
+  state.afterburnerActive = true;
+  state.takeoffTimer = 2.6;
+  return state;
+}
+
+// --- Player flight step -----------------------------------------------------
+
+/** Counts every player cooldown / active-timer down by one frame. */
+function tickPlayerCooldowns(state: PlayerFlightState, dt: number): void {
+  state.flaresCooldown = tickDown(state.flaresCooldown, dt);
+  state.maneuverCooldown = tickDown(state.maneuverCooldown, dt);
+  state.maneuverTimer = tickDown(state.maneuverTimer, dt);
+  state.collisionCooldown = tickDown(state.collisionCooldown, dt);
+}
+
+/**
+ * Missile reload: while below capacity the reload timer accumulates and
+ * one missile is restored each `missileReloadSec`. At full capacity the
+ * timer is parked at zero so a fresh volley starts from a clean clock.
+ */
+function reloadPlayerMissiles(
+  state: PlayerFlightState,
+  dt: number,
+  cfg: DifficultyConfig,
+): void {
+  if (state.missiles < state.maxMissiles) {
+    state.missileReloadTimer += dt;
+    if (state.missileReloadTimer >= cfg.missileReloadSec) {
+      state.missiles += 1;
+      state.missileReloadTimer = 0;
+    }
+  } else {
+    state.missileReloadTimer = 0;
+  }
+}
+
+/**
+ * The runway cinematic (first 2.6s after launching from the menu):
+ * speed ramps up the runway, the nose rotates up after the halfway
+ * point, and the jet lifts off. No fuel, heat or steering applies yet.
+ */
+function runTakeoffPhase(state: PlayerFlightState, dt: number): void {
+  state.takeoffTimer = Math.max(0, state.takeoffTimer - dt);
+  const progress = 1 - state.takeoffTimer / 2.6;
+  state.speed = lerp(55, 148, progress);
+  state.afterburnerActive = true;
+
+  // Rotate the nose up once past a third of the runway.
+  const targetPitch = progress > 0.35 ? lerp(0.01, 0.24, (progress - 0.35) / 0.65) : 0.01;
+  state.pitch = damp(state.pitch, targetPitch, 5.5, dt);
+  state.bank = damp(state.bank, 0, 6, dt);
+
+  const fwd = getForwardVector(state.heading, state.pitch);
+  state.pos.x += fwd.x * state.speed * dt;
+  state.pos.y += fwd.y * state.speed * dt;
+  state.pos.z += fwd.z * state.speed * dt;
+  state.pos.y = Math.max(state.pos.y, 18.2);
+}
+
+/**
+ * Throttle and afterburner. Boost is only available while there is fuel
+ * to burn; it raises the target speed well above the throttle curve.
+ * Diving adds a little speed, climbing bleeds a little, via gravity.
+ * Returns whether the afterburner is lit this frame.
+ */
+function updateThrottleAndSpeed(
+  state: PlayerFlightState,
+  input: FlightInput,
+  dt: number,
+): boolean {
+  state.throttle = clamp(state.throttle + input.throttleDelta * dt * 0.65, 0.25, 1.0);
+  const canBoost = state.fuel > 2 && input.boost;
+  state.afterburnerActive = canBoost;
+
+  const baseTargetSpeed = lerp(75, 175, state.throttle);
+  const targetSpeed = canBoost ? 245 : baseTargetSpeed;
+  const pitchGravityFactor = -Math.sin(state.pitch) * 26;
+  state.speed = damp(state.speed, clamp(targetSpeed + pitchGravityFactor, 60, 275), 2.8, dt);
+  return canBoost;
+}
+
+/**
+ * Fuel burn. In Free Flight the tank slowly regenerates during cruise
+ * (and drains slowly under boost) so exploration never ends abruptly;
+ * everywhere else fuel only ever decreases, and hitting zero ends the
+ * mission via the `fuelDepleted` flag returned by `stepPlayerFlight`.
+ */
+function updatePlayerFuel(
+  state: PlayerFlightState,
+  mode: GameMode,
+  canBoost: boolean,
+  dt: number,
+): void {
+  if (mode === 'freeflight') {
+    state.fuel = clamp(state.fuel + (canBoost ? -1.5 : 3.5) * dt, 15, state.maxFuel);
+  } else {
+    const burnRate = canBoost ? 2.8 : 0.32 + state.throttle * 0.45;
+    state.fuel = Math.max(0, state.fuel - burnRate * dt);
+  }
+}
+
+/** Cannon heat: builds while the trigger is held, cools when released. */
+function updateGunHeat(state: PlayerFlightState, input: FlightInput, dt: number): void {
+  if (input.fireGun) {
+    state.gunHeat = clamp(state.gunHeat + dt * 0.36, 0, 1);
+  } else {
+    state.gunHeat = clamp(state.gunHeat - dt * 0.45, 0, 1);
+  }
+}
+
+/**
+ * Aerodynamic steering: pitch from the stick, bank from roll (with a
+ * gentle self-levelling assist when the stick is released, or a full
+ * barrel roll while a maneuver is active), then a coordinated turn —
+ * banking induces heading change, plus direct rudder yaw — and finally
+ * the position advance along the forward vector.
+ */
+function steerPlayer(state: PlayerFlightState, input: FlightInput, dt: number): void {
+  const pitchRate = 1.45;
+  const rollRate = 2.65;
+  const yawRate = 0.85;
+
+  state.pitch = clamp(state.pitch + input.pitch * pitchRate * dt, -1.18, 1.18);
+
+  if (state.maneuverTimer > 0) {
+    // High-speed barrel roll.
+    state.bank = normalizeAngle(state.bank + Math.PI * 3.1 * dt);
+  } else if (Math.abs(input.roll) > 0.02) {
+    state.bank = clamp(state.bank - input.roll * rollRate * dt, -1.35, 1.35);
+  } else {
+    state.bank = damp(state.bank, 0, 2.2, dt);
+  }
+
+  const bankTurn = Math.sin(state.bank) * 0.92;
+  state.heading = normalizeAngle(state.heading + (bankTurn + -input.yaw * yawRate) * dt);
+
+  const fwd = getForwardVector(state.heading, state.pitch);
+  state.pos.x += fwd.x * state.speed * dt;
+  state.pos.y += fwd.y * state.speed * dt;
+  state.pos.z += fwd.z * state.speed * dt;
+}
+
+/** Soft ceiling and the outer perimeter turn-back. */
+function enforceFlightBounds(state: PlayerFlightState, dt: number): void {
+  if (state.pos.y > MAX_FLIGHT_ALTITUDE) {
+    state.pos.y = MAX_FLIGHT_ALTITUDE;
+    if (state.pitch > 0) state.pitch = damp(state.pitch, 0, 4, dt);
+  }
+
+  // Past the edge of the world, gently steer back toward the centre
+  // instead of letting the jet fly off into empty void.
+  const distFromOrigin = Math.hypot(state.pos.x, state.pos.z);
+  if (distFromOrigin > WORLD_RADIUS - 180) {
+    const angleToCenter = Math.atan2(state.pos.x, state.pos.z);
+    const diff = normalizeAngle(angleToCenter - state.heading);
+    state.heading = normalizeAngle(state.heading + diff * dt * 1.8);
+    state.pos.x = (state.pos.x / distFromOrigin) * Math.min(distFromOrigin, WORLD_RADIUS);
+    state.pos.z = (state.pos.z / distFromOrigin) * Math.min(distFromOrigin, WORLD_RADIUS);
+  }
+}
+
+/**
+ * Terrain / ocean contact. This deliberately never instant-crashes on
+ * a graze: the jet is bounced up to a safe clearance, the nose is
+ * raised, and — outside Free Flight — one scrape of damage is applied
+ * per collision-cooldown window. Only a scrape that drops health to
+ * zero counts as a crash.
+ */
+function checkTerrainContact(
+  state: PlayerFlightState,
+  mode: GameMode,
+  cfg: DifficultyConfig,
+  dt: number,
+): { terrainCrash: boolean; terrainScraped: boolean } {
+  const groundY = Math.max(OCEAN_LEVEL, sampleTerrainHeight(state.pos.x, state.pos.z));
+  let terrainCrash = false;
+  let terrainScraped = false;
+
+  if (state.pos.y < groundY + 5.5) {
+    state.pos.y = groundY + 11.5;
+    state.pitch = Math.max(0.24, state.pitch);
+    state.bank = damp(state.bank, 0, 5, dt);
+    if (mode !== 'freeflight' && state.collisionCooldown <= 0) {
+      state.collisionCooldown = 1.4;
+      state.health = Math.max(0, state.health - cfg.scrapeDmg);
+      terrainScraped = true;
+      if (state.health <= 0) terrainCrash = true;
+    }
+  }
+
+  return { terrainCrash, terrainScraped };
 }
 
 export function stepPlayerFlight(
@@ -288,152 +540,139 @@ export function stepPlayerFlight(
   input: FlightInput,
   dt: number,
   mode: GameMode,
-  difficulty: DifficultyMode = 'beginner'
+  difficulty: DifficultyMode = 'beginner',
 ): { terrainCrash: boolean; fuelDepleted: boolean; terrainScraped: boolean } {
   const clampedDt = Math.min(dt, 0.05);
   const diffCfg = DIFFICULTY_CONFIG[difficulty];
 
-  // Cooldowns & regeneration
-  if (state.flaresCooldown > 0) state.flaresCooldown = Math.max(0, state.flaresCooldown - clampedDt);
-  if (state.maneuverCooldown > 0) state.maneuverCooldown = Math.max(0, state.maneuverCooldown - clampedDt);
-  if (state.maneuverTimer > 0) state.maneuverTimer = Math.max(0, state.maneuverTimer - clampedDt);
-  if (state.collisionCooldown > 0) state.collisionCooldown = Math.max(0, state.collisionCooldown - clampedDt);
+  tickPlayerCooldowns(state, clampedDt);
+  reloadPlayerMissiles(state, clampedDt, diffCfg);
 
-  if (state.missiles < state.maxMissiles) {
-    state.missileReloadTimer += clampedDt;
-    if (state.missileReloadTimer >= diffCfg.missileReloadSec) {
-      state.missiles += 1;
-      state.missileReloadTimer = 0;
-    }
-  } else {
-    state.missileReloadTimer = 0;
-  }
-
-  // Trigger evasive barrel roll maneuver
+  // Trigger an evasive barrel-roll maneuver (also pops flares).
   if (input.maneuver && state.maneuverCooldown <= 0 && state.takeoffTimer <= 0) {
     state.maneuverTimer = 0.65;
     state.maneuverCooldown = 3.2;
     state.flaresCooldown = 1.5;
   }
 
-  // Runway cinematic takeoff phase (first 2.6s when launching from main menu)
   if (state.takeoffTimer > 0) {
-    state.takeoffTimer = Math.max(0, state.takeoffTimer - clampedDt);
-    const progress = 1 - state.takeoffTimer / 2.6;
-    state.speed = lerp(55, 148, progress);
-    state.afterburnerActive = true;
-    // Rotate nose up after halfway down the runway
-    const targetPitch = progress > 0.35 ? lerp(0.01, 0.24, (progress - 0.35) / 0.65) : 0.01;
-    state.pitch = damp(state.pitch, targetPitch, 5.5, clampedDt);
-    state.bank = damp(state.bank, 0, 6, clampedDt);
-
-    const fwd = getForwardVector(state.heading, state.pitch);
-    state.pos.x += fwd.x * state.speed * clampedDt;
-    state.pos.y += fwd.y * state.speed * clampedDt;
-    state.pos.z += fwd.z * state.speed * clampedDt;
-    state.pos.y = Math.max(state.pos.y, 18.2);
+    runTakeoffPhase(state, clampedDt);
     return { terrainCrash: false, fuelDepleted: false, terrainScraped: false };
   }
 
-  // Throttle & Afterburner Boost
-  state.throttle = clamp(state.throttle + input.throttleDelta * clampedDt * 0.65, 0.25, 1.0);
-  const canBoost = state.fuel > 2 && input.boost;
-  state.afterburnerActive = canBoost;
+  const canBoost = updateThrottleAndSpeed(state, input, clampedDt);
+  updatePlayerFuel(state, mode, canBoost, clampedDt);
+  updateGunHeat(state, input, clampedDt);
+  steerPlayer(state, input, clampedDt);
+  enforceFlightBounds(state, clampedDt);
+  const contact = checkTerrainContact(state, mode, diffCfg, clampedDt);
 
-  const baseTargetSpeed = lerp(75, 175, state.throttle);
-  const targetSpeed = canBoost ? 245 : baseTargetSpeed;
-  // Pitch affects airspeed slightly (diving speeds up, climbing slows slightly)
-  const pitchGravityFactor = -Math.sin(state.pitch) * 26;
-  state.speed = damp(state.speed, clamp(targetSpeed + pitchGravityFactor, 60, 275), 2.8, clampedDt);
+  return {
+    terrainCrash: contact.terrainCrash,
+    fuelDepleted: mode !== 'freeflight' && state.fuel <= 0,
+    terrainScraped: contact.terrainScraped,
+  };
+}
 
-  // Fuel consumption (Free Flight slowly regenerates fuel so exploration never ends abruptly)
-  if (mode === 'freeflight') {
-    state.fuel = clamp(state.fuel + (canBoost ? -1.5 : 3.5) * clampedDt, 15, state.maxFuel);
-  } else {
-    const burnRate = canBoost ? 2.8 : 0.32 + state.throttle * 0.45;
-    state.fuel = Math.max(0, state.fuel - burnRate * clampedDt);
-  }
+// --- Target locking ---------------------------------------------------------
 
-  // Gun heat management
-  if (input.fireGun) {
-    state.gunHeat = clamp(state.gunHeat + clampedDt * 0.36, 0, 1);
-  } else {
-    state.gunHeat = clamp(state.gunHeat - clampedDt * 0.45, 0, 1);
-  }
+/**
+ * Auto-target scoring: nearest wins, with a forward bias so the jet
+ * prefers enemies roughly ahead, and stickiness so the lock does not
+ * flicker between two equidistant targets.
+ */
+function scoreAutoTarget(
+  enemy: EnemyUnitState,
+  player: PlayerFlightState,
+  fwd: Vec3,
+  currentLockedId: number | null,
+): number {
+  const dx = enemy.pos.x - player.pos.x;
+  const dy = enemy.pos.y - player.pos.y;
+  const dz = enemy.pos.z - player.pos.z;
+  const dist = Math.hypot(dx, dy, dz);
+  const dot = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dist;
+  const stickiness = enemy.id === currentLockedId ? 180 : 0;
+  return -dist + dot * 120 + stickiness;
+}
 
-  // Smooth aerodynamic angular control
-  const pitchRate = 1.45;
-  const rollRate = 2.65;
-  const yawRate = 0.85;
+/** Picks the best auto-target: nearest in range, else nearest anywhere. */
+function pickAutoTarget(
+  player: PlayerFlightState,
+  enemies: EnemyUnitState[],
+  fwd: Vec3,
+  currentLockedId: number | null,
+): EnemyUnitState | null {
+  let bestInRange: EnemyUnitState | null = null;
+  let bestInRangeScore = -Infinity;
+  let nearestAny: EnemyUnitState | null = null;
+  let nearestAnyDist = Infinity;
 
-  state.pitch = clamp(state.pitch + input.pitch * pitchRate * clampedDt, -1.18, 1.18);
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue;
+    const dist = distanceBetween(enemy.pos, player.pos);
+    if (dist < 4) continue;
 
-  if (state.maneuverTimer > 0) {
-    // High-speed barrel roll
-    state.bank = normalizeAngle(state.bank + Math.PI * 3.1 * clampedDt);
-  } else if (Math.abs(input.roll) > 0.02) {
-    state.bank = clamp(state.bank - input.roll * rollRate * clampedDt, -1.35, 1.35);
-  } else {
-    // Gentle self-leveling stability assist when stick is released
-    state.bank = damp(state.bank, 0, 2.2, clampedDt);
-  }
+    if (dist < nearestAnyDist) {
+      nearestAnyDist = dist;
+      nearestAny = enemy;
+    }
 
-  // Coordinated turn: banking smoothly induces heading change + direct rudder yaw
-  const bankTurn = Math.sin(state.bank) * 0.92;
-  state.heading = normalizeAngle(state.heading + (bankTurn + -input.yaw * yawRate) * clampedDt);
-
-  // Advance world position along forward vector
-  const fwd = getForwardVector(state.heading, state.pitch);
-  state.pos.x += fwd.x * state.speed * clampedDt;
-  state.pos.y += fwd.y * state.speed * clampedDt;
-  state.pos.z += fwd.z * state.speed * clampedDt;
-
-  // Soft ceiling boundary
-  if (state.pos.y > MAX_FLIGHT_ALTITUDE) {
-    state.pos.y = MAX_FLIGHT_ALTITUDE;
-    if (state.pitch > 0) state.pitch = damp(state.pitch, 0, 4, clampedDt);
-  }
-
-  // Soft outer perimeter turn-back (prevents flying off into empty void)
-  const distFromOrigin = Math.hypot(state.pos.x, state.pos.z);
-  if (distFromOrigin > WORLD_RADIUS - 180) {
-    const angleToCenter = Math.atan2(state.pos.x, state.pos.z);
-    const diff = normalizeAngle(angleToCenter - state.heading);
-    state.heading = normalizeAngle(state.heading + diff * clampedDt * 1.8);
-    state.pos.x = (state.pos.x / distFromOrigin) * Math.min(distFromOrigin, WORLD_RADIUS);
-    state.pos.z = (state.pos.z / distFromOrigin) * Math.min(distFromOrigin, WORLD_RADIUS);
-  }
-
-  // Safe Terrain / Ocean clearance check (never instant-crashes unfairly; bounces gently with cooldown)
-  const groundY = Math.max(OCEAN_LEVEL, sampleTerrainHeight(state.pos.x, state.pos.z));
-  let terrainCrash = false;
-  let terrainScraped = false;
-  if (state.pos.y < groundY + 5.5) {
-    state.pos.y = groundY + 11.5;
-    state.pitch = Math.max(0.24, state.pitch);
-    state.bank = damp(state.bank, 0, 5, clampedDt);
-    if (mode !== 'freeflight' && state.collisionCooldown <= 0) {
-      state.collisionCooldown = 1.4;
-      state.health = Math.max(0, state.health - diffCfg.scrapeDmg);
-      terrainScraped = true;
-      if (state.health <= 0) terrainCrash = true;
+    if (dist <= 2200) {
+      const score = scoreAutoTarget(enemy, player, fwd, currentLockedId);
+      if (score > bestInRangeScore) {
+        bestInRangeScore = score;
+        bestInRange = enemy;
+      }
     }
   }
 
-  return {
-    terrainCrash,
-    fuelDepleted: mode !== 'freeflight' && state.fuel <= 0,
-    terrainScraped,
-  };
+  return bestInRange ?? nearestAny;
+}
+
+/** Picks the best manual target inside the forward cone (~45° half-angle). */
+function pickManualTarget(
+  player: PlayerFlightState,
+  enemies: EnemyUnitState[],
+  fwd: Vec3,
+  currentLockedId: number | null,
+): EnemyUnitState | null {
+  let bestEnemy: EnemyUnitState | null = null;
+  let bestScore = -Infinity;
+
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue;
+    const dx = enemy.pos.x - player.pos.x;
+    const dy = enemy.pos.y - player.pos.y;
+    const dz = enemy.pos.z - player.pos.z;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist > 1850 || dist < 8) continue;
+
+    const dot = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dist;
+    if (dot < 0.7) continue;
+
+    const stickiness = enemy.id === currentLockedId ? 0.1 : 0;
+    const score = dot - dist / 5500 + stickiness;
+    if (score > bestScore) {
+      bestScore = score;
+      bestEnemy = enemy;
+    }
+  }
+
+  return bestEnemy;
 }
 
 /**
  * Selects and locks onto enemy targets.
- * - When `autoTargetEnabled` is true: automatically selects the nearest active enemy
- *   (prioritizing reasonable targeting range up to 2200m, or nearest active fallback),
- *   switches immediately when the current target is destroyed, and automatically acquires
- *   missile lock without requiring manual boresight aiming.
+ * - When `autoTargetEnabled` is true: automatically selects the nearest
+ *   active enemy (prioritizing reasonable targeting range up to 2200m,
+ *   or nearest active fallback), switches immediately when the current
+ *   target is destroyed, and automatically acquires missile lock without
+ *   requiring manual boresight aiming.
  * - When `autoTargetEnabled` is false: uses forward-cone manual targeting.
+ *
+ * Lock progress accumulates while the same target stays selected and
+ * restarts from the first frame's worth when the target changes.
  */
 export function evaluateTargetLock(
   player: PlayerFlightState,
@@ -442,66 +681,14 @@ export function evaluateTargetLock(
   currentLockProgress: number,
   dt: number,
   difficulty: DifficultyMode = 'beginner',
-  autoTargetEnabled = false
+  autoTargetEnabled = false,
 ): { lockedId: number | null; lockProgress: number; isLocked: boolean } {
   const fwd = getForwardVector(player.heading, player.pitch);
   const lockRate = DIFFICULTY_CONFIG[difficulty].lockRate;
-  let bestEnemy: EnemyUnitState | null = null;
-  let bestScore = -Infinity;
 
-  if (autoTargetEnabled) {
-    let bestInRange: EnemyUnitState | null = null;
-    let bestInRangeScore = -Infinity;
-    let nearestAny: EnemyUnitState | null = null;
-    let nearestAnyDist = Infinity;
-
-    for (const enemy of enemies) {
-      if (!enemy.alive) continue;
-      const dx = enemy.pos.x - player.pos.x;
-      const dy = enemy.pos.y - player.pos.y;
-      const dz = enemy.pos.z - player.pos.z;
-      const dist = Math.hypot(dx, dy, dz);
-      if (dist < 4) continue;
-
-      if (dist < nearestAnyDist) {
-        nearestAnyDist = dist;
-        nearestAny = enemy;
-      }
-
-      if (dist <= 2200) {
-        // Favor nearest active hostile; small forward bias & stickiness prevent target flicker
-        const dot = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dist;
-        const stickiness = enemy.id === currentLockedId ? 180 : 0;
-        const forwardBonus = dot * 120;
-        const score = -dist + forwardBonus + stickiness;
-        if (score > bestInRangeScore) {
-          bestInRangeScore = score;
-          bestInRange = enemy;
-        }
-      }
-    }
-
-    bestEnemy = bestInRange ?? nearestAny;
-  } else {
-    for (const enemy of enemies) {
-      if (!enemy.alive) continue;
-      const dx = enemy.pos.x - player.pos.x;
-      const dy = enemy.pos.y - player.pos.y;
-      const dz = enemy.pos.z - player.pos.z;
-      const dist = Math.hypot(dx, dy, dz);
-      if (dist > 1850 || dist < 8) continue;
-
-      const dot = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dist;
-      if (dot < 0.70) continue; // ~45 deg wide half-cone for reliable tracking
-
-      const stickiness = enemy.id === currentLockedId ? 0.1 : 0;
-      const score = dot - dist / 5500 + stickiness;
-      if (score > bestScore) {
-        bestScore = score;
-        bestEnemy = enemy;
-      }
-    }
-  }
+  const bestEnemy = autoTargetEnabled
+    ? pickAutoTarget(player, enemies, fwd, currentLockedId)
+    : pickManualTarget(player, enemies, fwd, currentLockedId);
 
   if (!bestEnemy) {
     return { lockedId: null, lockProgress: 0, isLocked: false };
@@ -519,46 +706,31 @@ export function evaluateTargetLock(
   };
 }
 
-/**
- * Smoothly steers the player's jet toward the auto-selected enemy while respecting
- * manual stick/keyboard override and avoiding terrain, ocean, and skyscrapers.
- */
-export function applyAssistedPursuit(
-  player: PlayerFlightState,
-  target: EnemyUnitState | null,
-  input: FlightInput,
-  obstacles: BuildingObstacle[],
-  dt: number,
-  enabled: boolean
-): void {
-  if (!enabled || !target || !target.alive || player.takeoffTimer > 0 || player.maneuverTimer > 0) {
-    return;
-  }
-  const clampedDt = Math.min(dt, 0.05);
+// --- Assisted pursuit -------------------------------------------------------
 
-  // Manual joystick / keyboard steering smoothly overrides pursuit assistance
+/**
+ * How much pursuit assistance survives the player's own stick input:
+ * full assist at rest, fading to zero once the stick is pushed hard.
+ * Returns 0..1 (1 = full assist).
+ */
+function pursuitAssistWeight(input: FlightInput): number {
   const manualMag = clamp(
     Math.max(Math.abs(input.pitch), Math.abs(input.roll), Math.abs(input.yaw)),
     0,
-    1
+    1,
   );
-  const assistWeight = manualMag > 0.12 ? clamp(1 - (manualMag - 0.12) / 0.42, 0, 1) : 1;
-  if (assistWeight <= 0.01) return;
+  return manualMag > 0.12 ? clamp(1 - (manualMag - 0.12) / 0.42, 0, 1) : 1;
+}
 
-  const dx = target.pos.x - player.pos.x;
-  const dy = target.pos.y - player.pos.y;
-  const dz = target.pos.z - player.pos.z;
-  const dist = Math.hypot(dx, dy, dz);
-  if (dist < 25) return;
-
-  // Gentle predictive lead toward enemy path
-  const leadTime = clamp(dist / 450, 0.05, 0.75);
-  const tFwd = getForwardVector(target.heading, target.pitch);
-  let aimX = target.pos.x + tFwd.x * target.speed * leadTime;
-  let aimY = target.pos.y + tFwd.y * target.speed * leadTime;
-  let aimZ = target.pos.z + tFwd.z * target.speed * leadTime;
-
-  // Terrain & Building clearance lookahead along current + target flight path
+/**
+ * Scans the flight path ahead (65m / 130m / 210m) for terrain and
+ * buildings and returns the lowest safe altitude plus a horizontal
+ * nudge away from any building the jet is about to clip.
+ */
+function scanPursuitClearance(
+  player: PlayerFlightState,
+  obstacles: BuildingObstacle[],
+): { minSafeY: number; avoidTurnBias: number } {
   const pFwd = getForwardVector(player.heading, player.pitch);
   let minSafeY = Math.max(OCEAN_LEVEL + 48, sampleTerrainHeight(player.pos.x, player.pos.z) + 48);
   let avoidTurnBias = 0;
@@ -575,7 +747,7 @@ export function applyAssistedPursuit(
       const clearanceD = b.halfD + 32;
       if (Math.abs(bdx) < clearanceW && Math.abs(bdz) < clearanceD && player.pos.y < b.topY + 46) {
         minSafeY = Math.max(minSafeY, b.topY + 46);
-        // Gentle horizontal nudge away from building center
+        // Gentle horizontal nudge away from the building centre.
         const rightX = Math.cos(player.heading);
         const rightZ = -Math.sin(player.heading);
         const sideDot = (player.pos.x - b.x) * rightX + (player.pos.z - b.z) * rightZ;
@@ -584,7 +756,46 @@ export function applyAssistedPursuit(
     }
   }
 
-  // Clamp pursuit altitude safely above terrain & skyscrapers
+  return { minSafeY, avoidTurnBias };
+}
+
+/**
+ * Smoothly steers the player's jet toward the auto-selected enemy while
+ * respecting manual stick/keyboard override and avoiding terrain, ocean,
+ * and skyscrapers.
+ */
+export function applyAssistedPursuit(
+  player: PlayerFlightState,
+  target: EnemyUnitState | null,
+  input: FlightInput,
+  obstacles: BuildingObstacle[],
+  dt: number,
+  enabled: boolean,
+): void {
+  if (!enabled || !target || !target.alive || player.takeoffTimer > 0 || player.maneuverTimer > 0) {
+    return;
+  }
+  const clampedDt = Math.min(dt, 0.05);
+
+  const assistWeight = pursuitAssistWeight(input);
+  if (assistWeight <= 0.01) return;
+
+  const dx = target.pos.x - player.pos.x;
+  const dy = target.pos.y - player.pos.y;
+  const dz = target.pos.z - player.pos.z;
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < 25) return;
+
+  // Gentle predictive lead toward the enemy's path.
+  const leadTime = clamp(dist / 450, 0.05, 0.75);
+  const tFwd = getForwardVector(target.heading, target.pitch);
+  let aimX = target.pos.x + tFwd.x * target.speed * leadTime;
+  let aimY = target.pos.y + tFwd.y * target.speed * leadTime;
+  let aimZ = target.pos.z + tFwd.z * target.speed * leadTime;
+
+  const { minSafeY, avoidTurnBias } = scanPursuitClearance(player, obstacles);
+
+  // Clamp pursuit altitude safely above terrain and skyscrapers.
   aimY = Math.max(aimY, minSafeY);
 
   const ax = aimX - player.pos.x;
@@ -595,7 +806,7 @@ export function applyAssistedPursuit(
   const desiredHeading = Math.atan2(-ax, -az);
   let desiredPitch = clamp(Math.asin(clamp(ay / aDist, -0.88, 0.88)), -0.62, 0.68);
   if (player.pos.y < minSafeY) {
-    // Force gentle climb if below safe clearance envelope
+    // Force a gentle climb if below the safe clearance envelope.
     desiredPitch = Math.max(desiredPitch, clamp((minSafeY - player.pos.y) * 0.02 + 0.22, 0.22, 0.55));
   }
 
@@ -608,12 +819,14 @@ export function applyAssistedPursuit(
   const maxPitchStep = 0.85 * assistWeight * clampedDt;
   player.pitch = clamp(player.pitch + clamp(pitchDiff, -maxPitchStep, maxPitchStep), -1.15, 1.15);
 
-  // Subtle coordinated roll into turn when stick is idle
+  // Subtle coordinated roll into the turn when the stick is idle.
   if (Math.abs(input.roll) <= 0.08) {
     const targetBank = clamp(-headingDiff * 0.85, -0.75, 0.75) * assistWeight;
     player.bank = damp(player.bank, targetBank, 2.8, clampedDt);
   }
 }
+
+// --- Aim assist -------------------------------------------------------------
 
 export interface AimAssistSolution {
   targetId: number;
@@ -625,13 +838,18 @@ export interface AimAssistSolution {
 /**
  * Computes predicted lead intercept point and soft gimbal aim vector
  * for the best enemy inside the forward gun envelope.
+ *
+ * The preferred (locked) target gets a slightly wider acceptance cone
+ * and a scoring bonus; the returned aim direction blends the player's
+ * boresight toward the exact lead vector by the difficulty's assist
+ * strength, so Beginner feels guided and Ace feels nearly manual.
  */
 export function computeAimAssistLead(
   player: PlayerFlightState,
   enemies: EnemyUnitState[],
   preferredEnemyId: number | null,
   bulletSpeed: number,
-  difficulty: DifficultyMode = 'beginner'
+  difficulty: DifficultyMode = 'beginner',
 ): AimAssistSolution | null {
   const fwd = getForwardVector(player.heading, player.pitch);
   const cfg = DIFFICULTY_CONFIG[difficulty];
@@ -660,11 +878,7 @@ export function computeAimAssistLead(
 
   if (!bestEnemy) return null;
 
-  const rawDist = Math.hypot(
-    bestEnemy.pos.x - player.pos.x,
-    bestEnemy.pos.y - player.pos.y,
-    bestEnemy.pos.z - player.pos.z
-  );
+  const rawDist = distanceBetween(bestEnemy.pos, player.pos);
   const flightTime = clamp(rawDist / bulletSpeed, 0.02, 1.4);
   const eFwd = getForwardVector(bestEnemy.heading, bestEnemy.pitch);
   const ix = bestEnemy.pos.x + eFwd.x * bestEnemy.speed * flightTime;
@@ -679,7 +893,7 @@ export function computeAimAssistLead(
   const dirY = toIy / len;
   const dirZ = toIz / len;
 
-  // Blend player boresight forward vector toward exact lead vector by difficulty assist strength
+  // Blend boresight toward the exact lead vector by assist strength.
   const bx = lerp(fwd.x, dirX, cfg.aimAssistStrength);
   const by = lerp(fwd.y, dirY, cfg.aimAssistStrength);
   const bz = lerp(fwd.z, dirZ, cfg.aimAssistStrength);
@@ -692,6 +906,8 @@ export function computeAimAssistLead(
     distance: Math.round(rawDist),
   };
 }
+
+// --- Enemy stats ------------------------------------------------------------
 
 export function getEnemyMaxHealth(archetype: EnemyArchetype): number {
   switch (archetype) {
@@ -715,18 +931,130 @@ export function getEnemyScoreValue(archetype: EnemyArchetype): number {
   }
 }
 
+// --- Enemy AI ---------------------------------------------------------------
+
+interface EnemySteeringGoal {
+  targetX: number;
+  targetY: number;
+  targetZ: number;
+  desiredSpeed: number;
+  turnRate: number;
+}
+
 /**
- * Distinct AI movement & engagement policies for the 3 enemy archetypes:
- * - Interceptor: Fast pursuit chaser trying to line up behind/ahead of player
- * - Flanker: High-speed lateral orbiter executing swooping flanking arcs
- * - Gunship: Heavy armored patrol craft maintaining tactical altitude over landmarks
+ * A destroyed enemy spins down toward the ground; on contact with
+ * terrain or ocean it detonates immediately (`dyingTimer = 0`).
  */
+function stepDyingEnemy(enemy: EnemyUnitState, dt: number): void {
+  enemy.dyingTimer = Math.max(0, enemy.dyingTimer - dt);
+  enemy.bank += dt * 7.5;
+  enemy.pitch = clamp(enemy.pitch - dt * 0.8, -1.2, 0.2);
+  const fwd = getForwardVector(enemy.heading, enemy.pitch);
+  enemy.pos.x += fwd.x * enemy.speed * 0.85 * dt;
+  enemy.pos.y += fwd.y * enemy.speed * 0.85 * dt;
+  enemy.pos.z += fwd.z * enemy.speed * 0.85 * dt;
+  const groundY = Math.max(OCEAN_LEVEL, sampleTerrainHeight(enemy.pos.x, enemy.pos.z));
+  if (enemy.pos.y <= groundY + 4) {
+    enemy.pos.y = groundY + 4;
+    enemy.dyingTimer = 0;
+  }
+}
+
+/**
+ * Distinct movement & engagement policies for the three archetypes:
+ * - Interceptor: fast pursuit chaser, aiming slightly ahead of the
+ *   player when closing, breaking off into a climb after a close pass.
+ * - Flanker: high-speed lateral orbiter, holding a ~360m offset circle
+ *   and swooping inward periodically.
+ * - Gunship: heavy armoured patrol craft on a figure-8 sweep, closing
+ *   toward the player only once within 950m.
+ */
+function pickArchetypeGoal(
+  enemy: EnemyUnitState,
+  player: PlayerFlightState,
+  timeElapsed: number,
+  distToPlayer: number,
+): EnemySteeringGoal {
+  if (enemy.archetype === 'interceptor') {
+    if (distToPlayer < 130) {
+      // Breakaway climb after a pass.
+      return {
+        targetX: enemy.pos.x + Math.sin(enemy.aiPhaseOffset + timeElapsed * 0.6) * 450,
+        targetY: Math.max(160, player.pos.y + 90),
+        targetZ: enemy.pos.z + Math.cos(enemy.aiPhaseOffset + timeElapsed * 0.6) * 450,
+        desiredSpeed: distToPlayer > 400 ? 132 : 108,
+        turnRate: 1.45,
+      };
+    }
+    // Pursue a point slightly ahead of the player.
+    const playerFwd = getForwardVector(player.heading, player.pitch);
+    return {
+      targetX: player.pos.x + playerFwd.x * 35,
+      targetY: player.pos.y + playerFwd.y * 35,
+      targetZ: player.pos.z + playerFwd.z * 35,
+      desiredSpeed: distToPlayer > 400 ? 132 : 108,
+      turnRate: 1.45,
+    };
+  }
+
+  if (enemy.archetype === 'flanker') {
+    const orbitAngle = timeElapsed * 0.55 + enemy.aiPhaseOffset;
+    const orbitRadius = 260 + Math.sin(timeElapsed * 0.9 + enemy.aiPhaseOffset) * 140;
+    return {
+      targetX: player.pos.x + Math.cos(orbitAngle) * orbitRadius,
+      targetY: clamp(player.pos.y + Math.sin(orbitAngle * 1.3) * 75, 85, 380),
+      targetZ: player.pos.z + Math.sin(orbitAngle) * orbitRadius,
+      desiredSpeed: 124,
+      turnRate: 1.3,
+    };
+  }
+
+  // Gunship.
+  const t = timeElapsed * 0.25 + enemy.aiPhaseOffset;
+  if (distToPlayer > 750) {
+    return {
+      targetX: player.pos.x + Math.cos(t) * 240,
+      targetY: clamp(player.pos.y + 40, 140, 340),
+      targetZ: player.pos.z + Math.sin(t) * 240,
+      desiredSpeed: 82,
+      turnRate: 0.65,
+    };
+  }
+  return {
+    targetX: Math.sin(t) * 650,
+    targetY: 185 + Math.cos(t) * 45,
+    targetZ: Math.sin(t * 2) * 420,
+    desiredSpeed: 82,
+    turnRate: 0.65,
+  };
+}
+
+/**
+ * Reactive evasive jink + corkscrew climb/dive when under fire.
+ * Gunships are too heavy to jink, so they ignore this override.
+ */
+function applyEvadeOverride(
+  enemy: EnemyUnitState,
+  timeElapsed: number,
+): EnemySteeringGoal {
+  const jinkSign = Math.sin(timeElapsed * 5.2 + enemy.aiPhaseOffset) >= 0 ? 1 : -1;
+  const rx = Math.cos(enemy.heading) * jinkSign;
+  const rz = -Math.sin(enemy.heading) * jinkSign;
+  return {
+    targetX: enemy.pos.x + rx * 280,
+    targetY: clamp(enemy.pos.y + Math.cos(timeElapsed * 4.2 + enemy.aiPhaseOffset) * 110, 95, 420),
+    targetZ: enemy.pos.z + rz * 280,
+    desiredSpeed: 148,
+    turnRate: 2.05,
+  };
+}
+
 export function stepEnemyAI(
   enemy: EnemyUnitState,
   player: PlayerFlightState,
   timeElapsed: number,
   dt: number,
-  hasAttackToken: boolean
+  hasAttackToken: boolean,
 ): { wantsToFire: boolean; fireSpread: number } {
   const clampedDt = Math.min(dt, 0.05);
 
@@ -735,19 +1063,7 @@ export function stepEnemyAI(
   }
 
   if (!enemy.alive) {
-    // KO spinning descent before removal; detonate immediately on ground contact
-    enemy.dyingTimer = Math.max(0, enemy.dyingTimer - clampedDt);
-    enemy.bank += clampedDt * 7.5;
-    enemy.pitch = clamp(enemy.pitch - clampedDt * 0.8, -1.2, 0.2);
-    const fwd = getForwardVector(enemy.heading, enemy.pitch);
-    enemy.pos.x += fwd.x * enemy.speed * 0.85 * clampedDt;
-    enemy.pos.y += fwd.y * enemy.speed * 0.85 * clampedDt;
-    enemy.pos.z += fwd.z * enemy.speed * 0.85 * clampedDt;
-    const groundY = Math.max(OCEAN_LEVEL, sampleTerrainHeight(enemy.pos.x, enemy.pos.z));
-    if (enemy.pos.y <= groundY + 4) {
-      enemy.pos.y = groundY + 4;
-      enemy.dyingTimer = 0;
-    }
+    stepDyingEnemy(enemy, clampedDt);
     return { wantsToFire: false, fireSpread: 0 };
   }
 
@@ -760,74 +1076,24 @@ export function stepEnemyAI(
   const dz = player.pos.z - enemy.pos.z;
   const distToPlayer = Math.hypot(dx, dy, dz);
 
-  let targetX = player.pos.x;
-  let targetY = player.pos.y;
-  let targetZ = player.pos.z;
-  let desiredSpeed = 105;
-  let turnRate = 1.15;
-
-  if (enemy.archetype === 'interceptor') {
-    // Pursuit chaser: aims slightly ahead of player if closing, or breaks off if too close
-    desiredSpeed = distToPlayer > 400 ? 132 : 108;
-    turnRate = 1.45;
-    if (distToPlayer < 130) {
-      // Breakaway climb after pass
-      targetX = enemy.pos.x + Math.sin(enemy.aiPhaseOffset + timeElapsed * 0.6) * 450;
-      targetY = Math.max(160, player.pos.y + 90);
-      targetZ = enemy.pos.z + Math.cos(enemy.aiPhaseOffset + timeElapsed * 0.6) * 450;
-    } else {
-      const playerFwd = getForwardVector(player.heading, player.pitch);
-      targetX = player.pos.x + playerFwd.x * 35;
-      targetY = player.pos.y + playerFwd.y * 35;
-      targetZ = player.pos.z + playerFwd.z * 35;
-    }
-  } else if (enemy.archetype === 'flanker') {
-    // Orbiter: maintains ~360m lateral offset circle and swoops inward periodically
-    desiredSpeed = 124;
-    turnRate = 1.3;
-    const orbitAngle = timeElapsed * 0.55 + enemy.aiPhaseOffset;
-    const orbitRadius = 260 + Math.sin(timeElapsed * 0.9 + enemy.aiPhaseOffset) * 140;
-    targetX = player.pos.x + Math.cos(orbitAngle) * orbitRadius;
-    targetZ = player.pos.z + Math.sin(orbitAngle) * orbitRadius;
-    targetY = clamp(player.pos.y + Math.sin(orbitAngle * 1.3) * 75, 85, 380);
-  } else {
-    // Gunship: heavy figure-8 patrol sweeping toward player when within 950m
-    desiredSpeed = 82;
-    turnRate = 0.65;
-    const t = timeElapsed * 0.25 + enemy.aiPhaseOffset;
-    if (distToPlayer > 750) {
-      targetX = player.pos.x + Math.cos(t) * 240;
-      targetZ = player.pos.z + Math.sin(t) * 240;
-      targetY = clamp(player.pos.y + 40, 140, 340);
-    } else {
-      targetX = Math.sin(t) * 650;
-      targetZ = Math.sin(t * 2) * 420;
-      targetY = 185 + Math.cos(t) * 45;
-    }
-  }
-
+  let goal = pickArchetypeGoal(enemy, player, timeElapsed, distToPlayer);
   if (enemy.evadeTimer > 0 && enemy.archetype !== 'gunship') {
-    // Reactive evasive jink + corkscrew climb/dive when under fire
-    desiredSpeed = 148;
-    turnRate = 2.05;
-    const jinkSign = Math.sin(timeElapsed * 5.2 + enemy.aiPhaseOffset) >= 0 ? 1 : -1;
-    const rx = Math.cos(enemy.heading) * jinkSign;
-    const rz = -Math.sin(enemy.heading) * jinkSign;
-    targetX = enemy.pos.x + rx * 280;
-    targetZ = enemy.pos.z + rz * 280;
-    targetY = clamp(enemy.pos.y + Math.cos(timeElapsed * 4.2 + enemy.aiPhaseOffset) * 110, 95, 420);
+    goal = applyEvadeOverride(enemy, timeElapsed);
   }
 
-  const tx = targetX - enemy.pos.x;
-  const ty = targetY - enemy.pos.y;
-  const tz = targetZ - enemy.pos.z;
+  // Steer toward the goal point: limited turn rate on heading, damped
+  // pitch, and a bank that leans into the turn (or corkscrews while
+  // evading), then advance along the forward vector.
+  const tx = goal.targetX - enemy.pos.x;
+  const ty = goal.targetY - enemy.pos.y;
+  const tz = goal.targetZ - enemy.pos.z;
   const tDist = Math.max(1, Math.hypot(tx, ty, tz));
 
   const desiredHeading = Math.atan2(-tx, -tz);
   const desiredPitch = clamp(Math.asin(clamp(ty / tDist, -0.95, 0.95)), -0.75, 0.75);
 
   const headingDiff = normalizeAngle(desiredHeading - enemy.heading);
-  const maxTurn = turnRate * clampedDt;
+  const maxTurn = goal.turnRate * clampedDt;
   enemy.heading = normalizeAngle(enemy.heading + clamp(headingDiff, -maxTurn, maxTurn));
   enemy.pitch = damp(enemy.pitch, desiredPitch, 2.5, clampedDt);
   const desiredBank =
@@ -835,14 +1101,14 @@ export function stepEnemyAI(
       ? Math.sin(timeElapsed * 7.5 + enemy.aiPhaseOffset) * 1.25
       : clamp(-headingDiff * 1.6, -1.15, 1.15);
   enemy.bank = damp(enemy.bank, desiredBank, 4.5, clampedDt);
-  enemy.speed = damp(enemy.speed, desiredSpeed, 2.2, clampedDt);
+  enemy.speed = damp(enemy.speed, goal.desiredSpeed, 2.2, clampedDt);
 
   const fwd = getForwardVector(enemy.heading, enemy.pitch);
   enemy.pos.x += fwd.x * enemy.speed * clampedDt;
   enemy.pos.y += fwd.y * enemy.speed * clampedDt;
   enemy.pos.z += fwd.z * enemy.speed * clampedDt;
 
-  // Keep enemies safely above terrain & mountains
+  // Keep enemies safely above terrain and mountains, below the ceiling.
   const groundY = Math.max(OCEAN_LEVEL, sampleTerrainHeight(enemy.pos.x, enemy.pos.z));
   if (enemy.pos.y < groundY + 45) {
     enemy.pos.y = groundY + 45;
@@ -852,7 +1118,8 @@ export function stepEnemyAI(
     enemy.pos.y = MAX_FLIGHT_ALTITUDE - 60;
   }
 
-  // Attack decision gated by token pool & alignment
+  // Attack decision, gated by the token pool, range and alignment.
+  // A short telegraph delay gives the player a fair evasion window.
   if (enemy.fireCooldown > 0) {
     enemy.fireCooldown = Math.max(0, enemy.fireCooldown - clampedDt);
   }
@@ -885,20 +1152,24 @@ export function stepEnemyAI(
   };
 }
 
+// --- World pickups ----------------------------------------------------------
+
+/** Fixed checkpoint anchors, cycled if a mission asks for more than eight. */
+const CHECKPOINT_ANCHORS: Vec3[] = [
+  { x: 0, y: 125, z: -340 },
+  { x: -240, y: 155, z: -560 },
+  { x: -560, y: 240, z: -640 },
+  { x: -120, y: 170, z: -780 },
+  { x: 420, y: 190, z: -520 },
+  { x: 760, y: 235, z: -320 },
+  { x: 520, y: 175, z: 420 },
+  { x: -320, y: 155, z: 620 },
+];
+
 export function generateCheckpoints(count: number): CheckpointState[] {
-  const anchors: Vec3[] = [
-    { x: 0, y: 125, z: -340 },
-    { x: -240, y: 155, z: -560 },
-    { x: -560, y: 240, z: -640 },
-    { x: -120, y: 170, z: -780 },
-    { x: 420, y: 190, z: -520 },
-    { x: 760, y: 235, z: -320 },
-    { x: 520, y: 175, z: 420 },
-    { x: -320, y: 155, z: 620 },
-  ];
   const result: CheckpointState[] = [];
   for (let i = 0; i < count; i++) {
-    const base = anchors[i % anchors.length];
+    const base = CHECKPOINT_ANCHORS[i % CHECKPOINT_ANCHORS.length];
     result.push({
       id: i + 1,
       pos: { ...base },
@@ -910,18 +1181,20 @@ export function generateCheckpoints(count: number): CheckpointState[] {
   return result;
 }
 
+/** Fixed collectible placements: stars, fuel, repairs and missile packs. */
+const COLLECTIBLE_PLACEMENTS: Array<{ kind: CollectibleState['kind']; pos: Vec3 }> = [
+  { kind: 'star', pos: { x: 0, y: 110, z: -220 } },
+  { kind: 'fuel', pos: { x: -320, y: 140, z: -420 } },
+  { kind: 'repair', pos: { x: -720, y: 270, z: -620 } },
+  { kind: 'missile', pos: { x: 420, y: 160, z: -320 } },
+  { kind: 'star', pos: { x: 840, y: 240, z: -260 } },
+  { kind: 'fuel', pos: { x: 480, y: 150, z: 540 } },
+  { kind: 'repair', pos: { x: -340, y: 145, z: 620 } },
+  { kind: 'missile', pos: { x: -180, y: 120, z: 220 } },
+];
+
 export function generateCollectibles(): CollectibleState[] {
-  const placements: Array<{ kind: CollectibleState['kind']; pos: Vec3 }> = [
-    { kind: 'star', pos: { x: 0, y: 110, z: -220 } },
-    { kind: 'fuel', pos: { x: -320, y: 140, z: -420 } },
-    { kind: 'repair', pos: { x: -720, y: 270, z: -620 } },
-    { kind: 'missile', pos: { x: 420, y: 160, z: -320 } },
-    { kind: 'star', pos: { x: 840, y: 240, z: -260 } },
-    { kind: 'fuel', pos: { x: 480, y: 150, z: 540 } },
-    { kind: 'repair', pos: { x: -340, y: 145, z: 620 } },
-    { kind: 'missile', pos: { x: -180, y: 120, z: 220 } },
-  ];
-  return placements.map((item, idx) => ({
+  return COLLECTIBLE_PLACEMENTS.map((item, idx) => ({
     id: idx + 1,
     kind: item.kind,
     pos: { ...item.pos },
@@ -931,6 +1204,8 @@ export function generateCollectibles(): CollectibleState[] {
   }));
 }
 
+// --- Collisions -------------------------------------------------------------
+
 export function checkSphereCollision(a: Vec3, b: Vec3, radiusSum: number): boolean {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
@@ -939,14 +1214,16 @@ export function checkSphereCollision(a: Vec3, b: Vec3, radiusSum: number): boole
 }
 
 /**
- * Continuous swept segment-to-sphere collision check to prevent high-velocity
- * machine gun bullets or missiles from tunneling through aircraft between frames.
+ * Continuous swept segment-to-sphere collision check to prevent
+ * high-velocity machine gun bullets or missiles from tunneling through
+ * aircraft between frames. Falls back to a point check for a
+ * zero-length segment.
  */
 export function checkSegmentSphereCollision(
   p0: Vec3,
   p1: Vec3,
   center: Vec3,
-  radiusSum: number
+  radiusSum: number,
 ): boolean {
   const abx = p1.x - p0.x;
   const aby = p1.y - p0.y;
@@ -971,7 +1248,7 @@ export function checkSegmentSphereCollision(
 export function checkPlayerBuildingCollision(
   pos: Vec3,
   obstacles: Array<{ x: number; z: number; halfW: number; halfD: number; topY: number }>,
-  jetRadius = 4.2
+  jetRadius = 4.2,
 ): { x: number; z: number; halfW: number; halfD: number; topY: number } | null {
   for (const b of obstacles) {
     if (
@@ -985,30 +1262,48 @@ export function checkPlayerBuildingCollision(
   return null;
 }
 
+// --- Scoring ----------------------------------------------------------------
+
+/**
+ * Mission rank from the end-of-mission report. A defeat is always C.
+ * Otherwise one point each for good health (>=70 gives 2, >=40 gives 1),
+ * accuracy >= 35% and at least 4 kills: 4 points is S, 3 is A, 1–2 is B.
+ */
 export function computeMissionRank(
   outcome: 'victory' | 'defeat',
   accuracyPct: number,
   healthRemaining: number,
-  kills: number
+  kills: number,
 ): 'S' | 'A' | 'B' | 'C' {
   if (outcome === 'defeat') return 'C';
-  const score = (healthRemaining >= 70 ? 2 : healthRemaining >= 40 ? 1 : 0) + (accuracyPct >= 35 ? 1 : 0) + (kills >= 4 ? 1 : 0);
+  const score =
+    (healthRemaining >= 70 ? 2 : healthRemaining >= 40 ? 1 : 0) +
+    (accuracyPct >= 35 ? 1 : 0) +
+    (kills >= 4 ? 1 : 0);
   if (score >= 4) return 'S';
   if (score >= 3) return 'A';
   if (score >= 1) return 'B';
   return 'C';
 }
 
+// --- Camera -----------------------------------------------------------------
+
+/**
+ * Pushes a desired camera position out of terrain and buildings.
+ * Five samples along the ray from the anchor to the desired camera
+ * guarantee clearance: if a sample would sit inside the ground or a
+ * rooftop, the camera is either lifted above it (small lift) or
+ * pulled back toward the anchor (large lift).
+ */
 export function resolveSafeCameraPosition(
   anchor: Vec3,
   desiredCam: Vec3,
-  obstacles: Array<{ x: number; z: number; halfW: number; halfD: number; topY: number }>
+  obstacles: Array<{ x: number; z: number; halfW: number; halfD: number; topY: number }>,
 ): Vec3 {
   let outX = desiredCam.x;
   let outY = desiredCam.y;
   let outZ = desiredCam.z;
 
-  // Sample 5 points along ray from anchor -> desiredCam to guarantee terrain & building clearance
   for (let s = 1; s <= 5; s++) {
     const t = s / 5;
     const px = lerp(anchor.x, outX, t);
@@ -1026,7 +1321,7 @@ export function resolveSafeCameraPosition(
         Math.abs(pz - b.z) < b.halfD + 4.5 &&
         py < b.topY + 4.5
       ) {
-        // Pull camera slightly closer or lift above rooftop cleanly
+        // Pull the camera slightly closer, or lift it above the rooftop.
         if (b.topY + 6 - outY < 28) {
           outY = Math.max(outY, b.topY + 6);
         } else {
@@ -1040,4 +1335,3 @@ export function resolveSafeCameraPosition(
 
   return { x: outX, y: outY, z: outZ };
 }
-

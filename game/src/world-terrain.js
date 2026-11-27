@@ -1,55 +1,74 @@
 import { F as ShaderMaterial, L as SphereGeometry, O as PlaneGeometry, S as MeshBasicMaterial, T as Object3D, _ as HemisphereLight, a as BufferAttribute, c as CircleGeometry, d as CylinderGeometry, f as DirectionalLight, g as Group, h as FogExp2, i as BoxGeometry, l as Color, u as ConeGeometry, w as MeshStandardMaterial, x as Mesh, y as InstancedMesh, z as Vector3 } from "../vendor/libs.min.js";
 import { r as WORLD_RADIUS, x as sampleTerrainHeight } from "./flight-rules.js";
 // src/game/world.ts
+/**
+* world.ts — the sunset archipelago the game flies over.
+*
+* Builds the whole static environment in one place: the gradient sky dome,
+* three-point sunset lighting, the animated ocean, the vertex-coloured
+* island terrain with pine trees, the Solaris airbase, the coastal citadel
+* skyline, the volcanic glow, and the high cloud banks. The per-frame
+* `update` hook only moves the ocean time, scrolls the ocean bump map,
+* follows the player with the sun shadow, and drifts the clouds.
+*
+* Nothing here is loaded from disk — terrain heights come from
+* `sampleTerrainHeight` in rules.ts, textures from the procedural set.
+*/
 var SUN_DIRECTION = new Vector3(-.52, .21, -.83).normalize();
-function createOpenWorld(scene, textures, isSoftwareGl) {
-	const root = new Group();
-	scene.add(root);
-	scene.fog = new FogExp2(13202264, 24e-5);
-	scene.background = new Color(1775926);
+var SKY_VERTEX_SHADER = `
+  varying vec3 vWorldDir;
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldDir = normalize(position);
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`;
+var SKY_FRAGMENT_SHADER = `
+  varying vec3 vWorldDir;
+  uniform vec3 uSunDir;
+  void main() {
+    vec3 dir = normalize(vWorldDir);
+    float h = clamp(dir.y, -0.2, 1.0);
+
+    vec3 zenith = vec3(0.06, 0.10, 0.25);
+    vec3 midSky = vec3(0.30, 0.22, 0.42);
+    vec3 horizon = vec3(0.91, 0.48, 0.30);
+    vec3 belowHorizon = vec3(0.24, 0.14, 0.21);
+
+    vec3 col = mix(horizon, midSky, smoothstep(0.0, 0.25, h));
+    col = mix(col, zenith, smoothstep(0.20, 0.80, h));
+    if (h < 0.0) {
+      col = mix(horizon, belowHorizon, smoothstep(0.0, -0.18, h));
+    }
+
+    float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
+    col += vec3(1.0, 0.56, 0.24) * pow(sunDot, 10.0) * 0.6;
+    col += vec3(1.0, 0.88, 0.64) * pow(sunDot, 160.0) * 1.45;
+    float sunDisk = smoothstep(0.9985, 0.9994, sunDot);
+    col = mix(col, vec3(1.0, 0.97, 0.88), sunDisk);
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+/** Sunset sky dome with atmospheric horizon scattering and a sun disc. */
+function buildSkyDome(root) {
 	const skyGeo = new SphereGeometry(WORLD_RADIUS * 2.2, 32, 24);
 	const skyMat = new ShaderMaterial({
 		side: 1,
 		depthWrite: false,
 		fog: false,
 		uniforms: { uSunDir: { value: SUN_DIRECTION } },
-		vertexShader: `
-      varying vec3 vWorldDir;
-      void main() {
-        vec4 wp = modelMatrix * vec4(position, 1.0);
-        vWorldDir = normalize(position);
-        gl_Position = projectionMatrix * viewMatrix * wp;
-      }
-    `,
-		fragmentShader: `
-      varying vec3 vWorldDir;
-      uniform vec3 uSunDir;
-      void main() {
-        vec3 dir = normalize(vWorldDir);
-        float h = clamp(dir.y, -0.2, 1.0);
-
-        vec3 zenith = vec3(0.06, 0.10, 0.25);
-        vec3 midSky = vec3(0.30, 0.22, 0.42);
-        vec3 horizon = vec3(0.91, 0.48, 0.30);
-        vec3 belowHorizon = vec3(0.24, 0.14, 0.21);
-
-        vec3 col = mix(horizon, midSky, smoothstep(0.0, 0.25, h));
-        col = mix(col, zenith, smoothstep(0.20, 0.80, h));
-        if (h < 0.0) {
-          col = mix(horizon, belowHorizon, smoothstep(0.0, -0.18, h));
-        }
-
-        float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
-        col += vec3(1.0, 0.56, 0.24) * pow(sunDot, 10.0) * 0.6;
-        col += vec3(1.0, 0.88, 0.64) * pow(sunDot, 160.0) * 1.45;
-        float sunDisk = smoothstep(0.9985, 0.9994, sunDot);
-        col = mix(col, vec3(1.0, 0.97, 0.88), sunDisk);
-
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `
+		vertexShader: SKY_VERTEX_SHADER,
+		fragmentShader: SKY_FRAGMENT_SHADER
 	});
 	root.add(new Mesh(skyGeo, skyMat));
+	return {
+		skyGeo,
+		skyMat
+	};
+}
+/** Hemisphere fill + warm directional sun (shadow caster) + cool rim light. */
+function buildLighting(root, isSoftwareGl) {
 	const hemiLight = new HemisphereLight(8559316, 3876385, .98);
 	root.add(hemiLight);
 	const sunLight = new DirectionalLight(16757872, 2.8);
@@ -71,6 +90,10 @@ function createOpenWorld(scene, textures, isSoftwareGl) {
 	const rimLight = new DirectionalLight(6333946, .78);
 	rimLight.position.set(420, 260, 520);
 	root.add(rimLight);
+	return sunLight;
+}
+/** Reflective PBR ocean; vertex waves + sun-path glint are injected via onBeforeCompile. */
+function buildOcean(root, textures) {
 	const oceanUniforms = {
 		uTime: { value: 0 },
 		uSunDir: { value: SUN_DIRECTION }
@@ -107,30 +130,45 @@ function createOpenWorld(scene, textures, isSoftwareGl) {
 	ocean.position.y = 0;
 	ocean.receiveShadow = true;
 	root.add(ocean);
+	return {
+		oceanGeo,
+		oceanMat,
+		oceanUniforms
+	};
+}
+/** Height-band palette used for the terrain vertex colours. */
+var TERRAIN_BANDS = {
+	foam: new Color(4945785),
+	sand: new Color(13609080),
+	grass: new Color(2180144),
+	highland: new Color(3820859),
+	rock: new Color(5195340),
+	peak: new Color(10917002)
+};
+/** Pick the strata colour for a terrain height, blending across band edges. */
+function terrainColorForHeight(y, out) {
+	if (y < .5) return out.copy(TERRAIN_BANDS.foam);
+	if (y < 4.5) return out.copy(TERRAIN_BANDS.foam).lerp(TERRAIN_BANDS.sand, (y - .5) / 4);
+	if (y < 16) return out.copy(TERRAIN_BANDS.sand).lerp(TERRAIN_BANDS.grass, (y - 4.5) / 11.5);
+	if (y < 52) return out.copy(TERRAIN_BANDS.grass).lerp(TERRAIN_BANDS.highland, (y - 16) / 36);
+	if (y < 125) return out.copy(TERRAIN_BANDS.highland).lerp(TERRAIN_BANDS.rock, (y - 52) / 73);
+	return out.copy(TERRAIN_BANDS.rock).lerp(TERRAIN_BANDS.peak, Math.min(1, (y - 125) / 130));
+}
+/** Multi-island archipelago mesh, displaced and coloured from the heightfield. */
+function buildTerrain(root, isSoftwareGl) {
 	const terrainSize = 2800;
 	const segments = isSoftwareGl ? 115 : 148;
 	const terrainGeo = new PlaneGeometry(terrainSize, terrainSize, segments, segments);
 	terrainGeo.rotateX(-Math.PI / 2);
 	const posAttr = terrainGeo.attributes.position;
 	const colors = new Float32Array(posAttr.count * 3);
-	const cFoam = new Color(4945785);
-	const cSand = new Color(13609080);
-	const cGrass = new Color(2180144);
-	const cHighland = new Color(3820859);
-	const cRock = new Color(5195340);
-	const cPeak = new Color(10917002);
 	const cTemp = new Color();
 	for (let i = 0; i < posAttr.count; i++) {
 		const x = posAttr.getX(i);
 		const z = posAttr.getZ(i);
 		const y = sampleTerrainHeight(x, z);
 		posAttr.setY(i, y);
-		if (y < .5) cTemp.copy(cFoam);
-		else if (y < 4.5) cTemp.copy(cFoam).lerp(cSand, (y - .5) / 4);
-		else if (y < 16) cTemp.copy(cSand).lerp(cGrass, (y - 4.5) / 11.5);
-		else if (y < 52) cTemp.copy(cGrass).lerp(cHighland, (y - 16) / 36);
-		else if (y < 125) cTemp.copy(cHighland).lerp(cRock, (y - 52) / 73);
-		else cTemp.copy(cRock).lerp(cPeak, Math.min(1, (y - 125) / 130));
+		terrainColorForHeight(y, cTemp);
 		colors[i * 3] = cTemp.r;
 		colors[i * 3 + 1] = cTemp.g;
 		colors[i * 3 + 2] = cTemp.b;
@@ -146,6 +184,13 @@ function createOpenWorld(scene, textures, isSoftwareGl) {
 	terrainMesh.receiveShadow = true;
 	terrainMesh.castShadow = true;
 	root.add(terrainMesh);
+	return {
+		terrainGeo,
+		terrainMat
+	};
+}
+/** Island pine trees, instanced on a golden-angle spiral, skipping the airbase. */
+function plantTrees(root, dummy) {
 	const treeGeo = new ConeGeometry(4.2, 16, 6);
 	treeGeo.translate(0, 8, 0);
 	const treeMat = new MeshStandardMaterial({
@@ -169,7 +214,6 @@ function createOpenWorld(scene, textures, isSoftwareGl) {
 		});
 	}
 	const treesMesh = new InstancedMesh(treeGeo, treeMat, Math.max(1, treeSpots.length));
-	const dummy = new Object3D();
 	treeSpots.forEach((t, idx) => {
 		dummy.position.set(t.x, t.y, t.z);
 		dummy.scale.setScalar(t.s);
@@ -180,6 +224,13 @@ function createOpenWorld(scene, textures, isSoftwareGl) {
 	treesMesh.instanceMatrix.needsUpdate = true;
 	treesMesh.computeBoundingSphere();
 	root.add(treesMesh);
+	return {
+		treeGeo,
+		treeMat
+	};
+}
+/** Solaris airbase: tarmac apron, textured runway, edge beacons, tower, hangars. */
+function buildAirbase(root, textures, dummy) {
 	const runwayGroup = new Group();
 	const apronMesh = new Mesh(new BoxGeometry(126, .4, 385), new MeshStandardMaterial({
 		color: 2370875,
@@ -246,6 +297,17 @@ function createOpenWorld(scene, textures, isSoftwareGl) {
 		runwayGroup.add(hangar);
 	}
 	root.add(runwayGroup);
+	return {
+		beaconGeo,
+		beaconMat
+	};
+}
+/**
+* Futuristic coastal citadel: three districts of instanced towers, the
+* central spire landmark, and the volcanic caldera glow. Every tower also
+* registers a collision obstacle.
+*/
+function buildCity(root, textures, dummy) {
 	const buildingObstacles = [{
 		x: 36,
 		z: 130,
@@ -369,6 +431,17 @@ function createOpenWorld(scene, textures, isSoftwareGl) {
 	volcanoGlow.rotation.x = -Math.PI / 2;
 	volcanoGlow.position.set(-820, sampleTerrainHeight(-820, -680) + 2, -680);
 	root.add(volcanoGlow);
+	return {
+		buildingObstacles,
+		buildingGeo,
+		buildingMat
+	};
+}
+/**
+* High-altitude soft sunset cloud banks (y 350..610, so they never
+* obstruct low/mid flight). Puffs are grouped in threes per bank.
+*/
+function buildClouds(root, dummy) {
 	const cloudCount = 135;
 	const cloudGeo = new SphereGeometry(1, 10, 8);
 	const cloudMat = new MeshStandardMaterial({
@@ -421,6 +494,28 @@ function createOpenWorld(scene, textures, isSoftwareGl) {
 	if (cloudsMesh.instanceColor) cloudsMesh.instanceColor.needsUpdate = true;
 	cloudsMesh.frustumCulled = false;
 	root.add(cloudsMesh);
+	return {
+		cloudsMesh,
+		cloudGeo,
+		cloudMat,
+		cloudBaseTransforms
+	};
+}
+function createOpenWorld(scene, textures, isSoftwareGl) {
+	const root = new Group();
+	scene.add(root);
+	scene.fog = new FogExp2(13202264, 24e-5);
+	scene.background = new Color(1775926);
+	const dummy = new Object3D();
+	const { skyGeo, skyMat } = buildSkyDome(root);
+	const sunLight = buildLighting(root, isSoftwareGl);
+	const { oceanGeo, oceanMat, oceanUniforms } = buildOcean(root, textures);
+	const { terrainGeo, terrainMat } = buildTerrain(root, isSoftwareGl);
+	const { treeGeo, treeMat } = plantTrees(root, dummy);
+	const { beaconGeo, beaconMat } = buildAirbase(root, textures, dummy);
+	const { buildingObstacles, buildingGeo, buildingMat } = buildCity(root, textures, dummy);
+	const { cloudsMesh, cloudGeo, cloudMat, cloudBaseTransforms } = buildClouds(root, dummy);
+	const cloudCount = cloudBaseTransforms.length;
 	const update = (timeElapsed, playerPos, cameraPos) => {
 		oceanUniforms.uTime.value = timeElapsed;
 		textures.oceanBump.offset.x = timeElapsed * .015 % 1;
