@@ -155,6 +155,7 @@ export interface HudSnapshot {
   missiles: number;
   maxMissiles: number;
   gunHeat: number;
+  gunOverheated: boolean;
   afterburner: boolean;
   maneuverReady: boolean;
   takeoffActive: boolean;

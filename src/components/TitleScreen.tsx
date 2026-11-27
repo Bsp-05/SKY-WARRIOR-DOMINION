@@ -48,6 +48,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Enter' || e.code === 'Space') {
+        const target = e.target as HTMLElement | null;
+        const interactive = target?.closest('button, a, input, select, textarea, [role="button"]');
+        if (interactive && interactive.getAttribute('data-start') !== 'true') {
+          return;
+        }
         e.preventDefault();
         onStart();
       }

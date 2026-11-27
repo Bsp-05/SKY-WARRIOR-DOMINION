@@ -1,4 +1,4 @@
-import { j as SRGBColorSpace, k as RepeatWrapping, o as CanvasTexture } from "../vendor/libs.min.js";
+import { N as SRGBColorSpace, j as RepeatWrapping, o as CanvasTexture } from "../vendor/libs.min.js";
 // src/game/textures.ts
 function createProceduralTextures(maxAnisotropy) {
 	const panelBumpCanvas = document.createElement("canvas");

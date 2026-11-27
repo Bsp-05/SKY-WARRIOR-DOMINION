@@ -170,6 +170,7 @@ export class FlightGameEngine {
   private lockedTargetId: number | null = null;
   private lockProgress = 0;
   private gunFireTimer = 0;
+  private gunOverheated = false;
   private muzzleFlashTimers: [number, number] = [0, 0];
   private enemyMissileCooldown = 14.0;
   private survivalSpawnTimer = 0;
@@ -406,6 +407,7 @@ export class FlightGameEngine {
     if (this.livery === livery) return;
     this.livery = livery;
     this.scene.remove(this.playerRig.root);
+    this.disposeGroupResources(this.playerRig.root);
     this.playerRig = createFighterJetModel(livery, this.textures, this.isSoftwareGl);
     this.scene.add(this.playerRig.root);
     this.syncPlayerRigTransform(0.016);
@@ -444,6 +446,7 @@ export class FlightGameEngine {
     this.hitMarkerTimer = 0;
     this.combatFeedback = null;
     this.muzzleFlashTimers = [0, 0];
+    this.gunOverheated = false;
     this.enemyMissileCooldown = diffCfg.enemyMissileCooldown * 0.9;
     this.survivalSpawnTimer = 0;
     this.keys.clear();
@@ -663,7 +666,7 @@ export class FlightGameEngine {
 
   private disposeGroupResources(group: THREE.Object3D): void {
     group.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) {
+      if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.Points) {
         obj.geometry.dispose();
         if (Array.isArray(obj.material)) {
           obj.material.forEach((m) => m.dispose());
@@ -684,12 +687,14 @@ export class FlightGameEngine {
 
     for (const m of this.checkpointMeshes.values()) {
       this.scene.remove(m);
+      this.disposeGroupResources(m);
     }
     this.checkpointMeshes.clear();
     this.checkpoints = [];
 
     for (const c of this.collectibleMeshes.values()) {
       this.scene.remove(c);
+      this.disposeGroupResources(c);
     }
     this.collectibleMeshes.clear();
     this.collectibles = [];
@@ -895,7 +900,13 @@ export class FlightGameEngine {
   }
 
   private firePlayerCannons(): void {
-    if (this.player.gunHeat >= 0.98) return;
+    if (this.gunOverheated || this.player.gunHeat >= 0.98) {
+      if (!this.gunOverheated) {
+        this.gunOverheated = true;
+        this.showBanner('CANNON OVERHEAT — COOLING', 1.4);
+      }
+      return;
+    }
     const bulletSpeed = 680;
     const fwd = getForwardVector(this.player.heading, this.player.pitch, _vA);
     const assist = computeAimAssistLead(
@@ -1195,8 +1206,16 @@ export class FlightGameEngine {
 
     const diffCfg = DIFFICULTY_CONFIG[this.difficulty];
     const input = this.readInput();
+    if (this.gunOverheated && this.player.gunHeat <= 0.45) {
+      this.gunOverheated = false;
+    }
+    const flightInput = this.gunOverheated ? { ...input, fireGun: false } : input;
     const prevManeuver = this.player.maneuverTimer;
-    const flightOutcome = stepPlayerFlight(this.player, input, dt, this.mode, this.difficulty);
+    const flightOutcome = stepPlayerFlight(this.player, flightInput, dt, this.mode, this.difficulty);
+    if (!this.gunOverheated && this.player.gunHeat >= 0.98) {
+      this.gunOverheated = true;
+      this.showBanner('CANNON OVERHEAT — COOLING', 1.4);
+    }
 
     if (prevManeuver <= 0 && this.player.maneuverTimer > 0) {
       this.sound.playManeuver();
@@ -1309,7 +1328,7 @@ export class FlightGameEngine {
 
     // Weapons
     if (this.gunFireTimer > 0) this.gunFireTimer -= dt;
-    if (input.fireGun && this.player.takeoffTimer <= 0 && this.gunFireTimer <= 0) {
+    if (input.fireGun && !this.gunOverheated && this.player.takeoffTimer <= 0 && this.gunFireTimer <= 0) {
       this.firePlayerCannons();
       this.gunFireTimer = 0.08;
     }
@@ -1867,11 +1886,21 @@ export class FlightGameEngine {
     const nextCp = this.checkpoints.find((c) => !c.collected) ?? null;
     let projectedCp: ProjectedCheckpoint | null = null;
     if (nextCp) {
-      _vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z);
-      _vProj.project(this.camera);
-      const inFront = _vProj.z >= -1 && _vProj.z <= 1;
-      const sx = clamp(_vProj.x * 0.5 + 0.5, 0.1, 0.9);
-      const sy = clamp(-_vProj.y * 0.5 + 0.5, 0.16, 0.74);
+      _vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z).applyMatrix4(this.camera.matrixWorldInverse);
+      const inFront = _vProj.z < -1.0;
+      let screenX = 0.5;
+      let screenY = 0.5;
+      if (inFront) {
+        _vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z).project(this.camera);
+        screenX = clamp(_vProj.x * 0.5 + 0.5, 0.1, 0.9);
+        screenY = clamp(-_vProj.y * 0.5 + 0.5, 0.16, 0.74);
+      } else {
+        const dx = _vProj.x;
+        const dy = -_vProj.y;
+        const mag = Math.max(1e-4, Math.hypot(dx, dy));
+        screenX = clamp(0.5 + (dx / mag) * 0.4, 0.14, 0.86);
+        screenY = clamp(0.48 + (dy / mag) * 0.3, 0.18, 0.72);
+      }
       const dist = Math.hypot(
         nextCp.pos.x - this.player.pos.x,
         nextCp.pos.y - this.player.pos.y,
@@ -1879,8 +1908,8 @@ export class FlightGameEngine {
       );
       projectedCp = {
         id: nextCp.id,
-        screenX: inFront ? sx : clamp(1 - sx, 0.18, 0.82),
-        screenY: inFront ? sy : 0.72,
+        screenX,
+        screenY,
         inFront,
         distance: Math.round(dist),
         order: nextCp.order,
@@ -1958,9 +1987,13 @@ export class FlightGameEngine {
     );
     let leadTarget: { screenX: number; screenY: number; distance: number } | null = null;
     if (leadSol) {
-      _vProj.set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z);
-      _vProj.project(this.camera);
-      if (_vProj.z >= -1 && _vProj.z <= 1) {
+      _vProj
+        .set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z)
+        .applyMatrix4(this.camera.matrixWorldInverse);
+      if (_vProj.z < -1.0) {
+        _vProj
+          .set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z)
+          .project(this.camera);
         leadTarget = {
           screenX: clamp(_vProj.x * 0.5 + 0.5, 0.08, 0.92),
           screenY: clamp(-_vProj.y * 0.5 + 0.5, 0.14, 0.78),
@@ -2007,6 +2040,7 @@ export class FlightGameEngine {
       missiles: this.player.missiles,
       maxMissiles: this.player.maxMissiles,
       gunHeat: this.player.gunHeat,
+      gunOverheated: this.gunOverheated,
       afterburner: this.player.afterburnerActive,
       maneuverReady: this.player.maneuverCooldown <= 0,
       takeoffActive: this.player.takeoffTimer > 0,
@@ -2210,14 +2244,25 @@ export class FlightGameEngine {
     this.renderer.domElement.removeEventListener('wheel', this.handleWheel);
     this.resizeObserver.disconnect();
 
+    this.clearDynamicActors();
+    this.scene.remove(this.playerRig.root);
+    this.disposeGroupResources(this.playerRig.root);
+    for (const m of this.missiles) {
+      this.scene.remove(m.mesh);
+      this.disposeGroupResources(m.mesh);
+    }
+
     this.sound.dispose();
     this.world.dispose();
     this.textures.dispose();
+    this.scene.remove(this.bulletMesh);
     this.bulletMesh.geometry.dispose();
     (this.bulletMesh.material as THREE.Material).dispose();
+    this.scene.remove(this.particleMesh);
     this.particleMesh.geometry.dispose();
     (this.particleMesh.material as THREE.Material).dispose();
     for (const s of this.shockwaves) {
+      this.scene.remove(s.mesh);
       s.mesh.geometry.dispose();
       (s.mesh.material as THREE.Material).dispose();
     }

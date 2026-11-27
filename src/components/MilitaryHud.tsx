@@ -130,14 +130,16 @@ export const MilitaryHud: React.FC<MilitaryHudProps> = ({
 
       <div>
         <div className="flex items-center justify-between text-[10px] font-hud mb-0.5">
-          <span className="text-slate-400">HEAT</span>
-          <span className={hud.gunHeat > 0.8 ? 'text-rose-400' : 'text-sky-300'}>
+          <span className={hud.gunOverheated ? 'text-rose-400 font-bold' : 'text-slate-400'}>
+            {hud.gunOverheated ? 'OVERHEAT' : 'HEAT'}
+          </span>
+          <span className={hud.gunOverheated || hud.gunHeat > 0.8 ? 'text-rose-400 font-bold' : 'text-sky-300'}>
             {Math.round(hud.gunHeat * 100)}%
           </span>
         </div>
         <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
           <div
-            className={`h-full ${hud.gunHeat > 0.8 ? 'bg-rose-500' : 'bg-sky-400'}`}
+            className={`h-full ${hud.gunOverheated || hud.gunHeat > 0.8 ? 'bg-rose-500' : 'bg-sky-400'}`}
             style={{ width: `${Math.round(hud.gunHeat * 100)}%` }}
           />
         </div>

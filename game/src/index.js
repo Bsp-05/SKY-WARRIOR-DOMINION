@@ -1,5 +1,5 @@
 import { n as __toESM } from "./rolldown-runtime.js";
-import { B as require_react, R as require_jsx_dev_runtime, z as require_client } from "../vendor/libs.min.js";
+import { B as require_jsx_dev_runtime, H as require_react, V as require_client } from "../vendor/libs.min.js";
 import { n as MISSIONS, t as DIFFICULTY_CONFIG } from "./flight-rules.js";
 import { t as FlightGameEngine } from "./flight-engine.js";
 // \0vite/modulepreload-polyfill.js
@@ -595,18 +595,18 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 			/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", { children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 				className: "flex items-center justify-between text-[10px] font-hud mb-0.5",
 				children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
-					className: "text-slate-400",
-					children: "HEAT"
+					className: hud.gunOverheated ? "text-rose-400 font-bold" : "text-slate-400",
+					children: hud.gunOverheated ? "OVERHEAT" : "HEAT"
 				}, void 0, false, {
 					fileName: _jsxFileName$4,
 					lineNumber: 133,
 					columnNumber: 11
 				}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
-					className: hud.gunHeat > .8 ? "text-rose-400" : "text-sky-300",
+					className: hud.gunOverheated || hud.gunHeat > .8 ? "text-rose-400 font-bold" : "text-sky-300",
 					children: [Math.round(hud.gunHeat * 100), "%"]
 				}, void 0, true, {
 					fileName: _jsxFileName$4,
-					lineNumber: 134,
+					lineNumber: 136,
 					columnNumber: 11
 				}, void 0)]
 			}, void 0, true, {
@@ -616,16 +616,16 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 			}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 				className: "h-1 bg-slate-800 rounded-full overflow-hidden",
 				children: /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
-					className: `h-full ${hud.gunHeat > .8 ? "bg-rose-500" : "bg-sky-400"}`,
+					className: `h-full ${hud.gunOverheated || hud.gunHeat > .8 ? "bg-rose-500" : "bg-sky-400"}`,
 					style: { width: `${Math.round(hud.gunHeat * 100)}%` }
 				}, void 0, false, {
 					fileName: _jsxFileName$4,
-					lineNumber: 139,
+					lineNumber: 141,
 					columnNumber: 11
 				}, void 0)
 			}, void 0, false, {
 				fileName: _jsxFileName$4,
-				lineNumber: 138,
+				lineNumber: 140,
 				columnNumber: 9
 			}, void 0)] }, void 0, true, {
 				fileName: _jsxFileName$4,
@@ -646,7 +646,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 				style: { boxShadow: `inset 0 0 110px rgba(239, 68, 68, ${Math.max(hud.damageFlash * .65, hud.lowHealthWarning ? .35 : 0)})` }
 			}, void 0, false, {
 				fileName: _jsxFileName$4,
-				lineNumber: 152,
+				lineNumber: 154,
 				columnNumber: 9
 			}, void 0),
 			hud.afterburner && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("svg", {
@@ -666,7 +666,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							y2: "20"
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 171,
+							lineNumber: 173,
 							columnNumber: 13
 						}, void 0),
 						/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -676,7 +676,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							y2: "20"
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 172,
+							lineNumber: 174,
 							columnNumber: 13
 						}, void 0),
 						/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -686,7 +686,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							y2: "46"
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 173,
+							lineNumber: 175,
 							columnNumber: 13
 						}, void 0),
 						/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -696,7 +696,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							y2: "46"
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 174,
+							lineNumber: 176,
 							columnNumber: 13
 						}, void 0),
 						/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -706,7 +706,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							y2: "73"
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 175,
+							lineNumber: 177,
 							columnNumber: 13
 						}, void 0),
 						/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -716,7 +716,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							y2: "73"
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 176,
+							lineNumber: 178,
 							columnNumber: 13
 						}, void 0),
 						/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -726,7 +726,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							y2: "10"
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 177,
+							lineNumber: 179,
 							columnNumber: 13
 						}, void 0),
 						/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -736,18 +736,18 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							y2: "10"
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 178,
+							lineNumber: 180,
 							columnNumber: 13
 						}, void 0)
 					]
 				}, void 0, true, {
 					fileName: _jsxFileName$4,
-					lineNumber: 170,
+					lineNumber: 172,
 					columnNumber: 11
 				}, void 0)
 			}, void 0, false, {
 				fileName: _jsxFileName$4,
-				lineNumber: 164,
+				lineNumber: 166,
 				columnNumber: 9
 			}, void 0),
 			hud.targets.map((t) => {
@@ -772,12 +772,12 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								style: { width: `${hpPct}%` }
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 209,
+								lineNumber: 211,
 								columnNumber: 17
 							}, void 0)
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 208,
+							lineNumber: 210,
 							columnNumber: 15
 						}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 							className: `px-1.5 py-0.5 text-[10px] font-hud rounded whitespace-nowrap border ${t.isLockedTarget ? "text-emerald-200 bg-emerald-950/90 border-emerald-400/80" : "text-rose-200 bg-rose-950/85 border-rose-500/70"}`,
@@ -791,12 +791,12 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							]
 						}, void 0, true, {
 							fileName: _jsxFileName$4,
-							lineNumber: 211,
+							lineNumber: 213,
 							columnNumber: 15
 						}, void 0)]
 					}, t.id, true, {
 						fileName: _jsxFileName$4,
-						lineNumber: 203,
+						lineNumber: 205,
 						columnNumber: 13
 					}, void 0);
 				}
@@ -819,7 +819,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							]
 						}, void 0, true, {
 							fileName: _jsxFileName$4,
-							lineNumber: 238,
+							lineNumber: 240,
 							columnNumber: 15
 						}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 							className: "w-14 sm:w-16 h-2 bg-slate-950/95 border border-slate-400/75 rounded-sm overflow-hidden",
@@ -828,17 +828,17 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								style: { width: `${hpPct}%` }
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 242,
+								lineNumber: 244,
 								columnNumber: 17
 							}, void 0)
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 241,
+							lineNumber: 243,
 							columnNumber: 15
 						}, void 0)]
 					}, void 0, true, {
 						fileName: _jsxFileName$4,
-						lineNumber: 237,
+						lineNumber: 239,
 						columnNumber: 13
 					}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 						className: `w-9 h-9 sm:w-11 sm:h-11 border-2 ${boxBorder} relative`,
@@ -848,17 +848,17 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							children: hud.lockState === "locked" ? "TARGET LOCKED" : "TRACKING"
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 248,
+							lineNumber: 250,
 							columnNumber: 17
 						}, void 0)
 					}, void 0, false, {
 						fileName: _jsxFileName$4,
-						lineNumber: 246,
+						lineNumber: 248,
 						columnNumber: 13
 					}, void 0)]
 				}, t.id, true, {
 					fileName: _jsxFileName$4,
-					lineNumber: 231,
+					lineNumber: 233,
 					columnNumber: 11
 				}, void 0);
 			}),
@@ -872,17 +872,17 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 					className: "w-6 h-6 rounded-full border-2 border-cyan-300/90 flex items-center justify-center",
 					children: /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", { className: "w-1.5 h-1.5 rounded-full bg-cyan-300" }, void 0, false, {
 						fileName: _jsxFileName$4,
-						lineNumber: 267,
+						lineNumber: 269,
 						columnNumber: 13
 					}, void 0)
 				}, void 0, false, {
 					fileName: _jsxFileName$4,
-					lineNumber: 266,
+					lineNumber: 268,
 					columnNumber: 11
 				}, void 0)
 			}, void 0, false, {
 				fileName: _jsxFileName$4,
-				lineNumber: 259,
+				lineNumber: 261,
 				columnNumber: 9
 			}, void 0),
 			hud.nextCheckpoint && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -895,12 +895,12 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 					className: "w-6 h-6 sm:w-7 sm:h-7 rotate-45 border-2 border-sky-400 flex items-center justify-center",
 					children: /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", { className: "w-2 h-2 bg-amber-300" }, void 0, false, {
 						fileName: _jsxFileName$4,
-						lineNumber: 282,
+						lineNumber: 284,
 						columnNumber: 13
 					}, void 0)
 				}, void 0, false, {
 					fileName: _jsxFileName$4,
-					lineNumber: 281,
+					lineNumber: 283,
 					columnNumber: 11
 				}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
 					className: "mt-1 text-[10px] font-hud text-sky-200 hud-stroke whitespace-nowrap",
@@ -913,12 +913,12 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 					]
 				}, void 0, true, {
 					fileName: _jsxFileName$4,
-					lineNumber: 284,
+					lineNumber: 286,
 					columnNumber: 11
 				}, void 0)]
 			}, void 0, true, {
 				fileName: _jsxFileName$4,
-				lineNumber: 274,
+				lineNumber: 276,
 				columnNumber: 9
 			}, void 0),
 			/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -930,7 +930,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 						children: hud.combatFeedback.text
 					}, void 0, false, {
 						fileName: _jsxFileName$4,
-						lineNumber: 293,
+						lineNumber: 295,
 						columnNumber: 11
 					}, void 0),
 					hud.lockState !== "none" && hud.lockedTargetCallsign && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -939,7 +939,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 						children: hud.lockState === "locked" ? `TARGET LOCKED · ${hud.lockedTargetCallsign} (${hud.lockedTargetDist ?? 0}m)` : `LOCKING · ${hud.lockedTargetCallsign} ${Math.round(hud.lockProgress * 100)}%`
 					}, void 0, false, {
 						fileName: _jsxFileName$4,
-						lineNumber: 308,
+						lineNumber: 310,
 						columnNumber: 11
 					}, void 0),
 					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("svg", {
@@ -959,7 +959,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 										strokeOpacity: "0.65"
 									}, void 0, false, {
 										fileName: _jsxFileName$4,
-										lineNumber: 329,
+										lineNumber: 331,
 										columnNumber: 13
 									}, void 0),
 									/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -972,7 +972,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 										strokeOpacity: "0.65"
 									}, void 0, false, {
 										fileName: _jsxFileName$4,
-										lineNumber: 330,
+										lineNumber: 332,
 										columnNumber: 13
 									}, void 0),
 									/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -985,7 +985,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 										strokeOpacity: "0.65"
 									}, void 0, false, {
 										fileName: _jsxFileName$4,
-										lineNumber: 331,
+										lineNumber: 333,
 										columnNumber: 13
 									}, void 0),
 									/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -998,13 +998,13 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 										strokeOpacity: "0.65"
 									}, void 0, false, {
 										fileName: _jsxFileName$4,
-										lineNumber: 332,
+										lineNumber: 334,
 										columnNumber: 13
 									}, void 0)
 								]
 							}, void 0, true, {
 								fileName: _jsxFileName$4,
-								lineNumber: 323,
+								lineNumber: 325,
 								columnNumber: 11
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("circle", {
@@ -1016,7 +1016,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "2"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 336,
+								lineNumber: 338,
 								columnNumber: 11
 							}, void 0),
 							hud.lockProgress > 0 && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("circle", {
@@ -1031,7 +1031,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								transform: "rotate(-90 90 90)"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 345,
+								lineNumber: 347,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("circle", {
@@ -1041,7 +1041,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								fill: lockColor
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 359,
+								lineNumber: 361,
 								columnNumber: 11
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("path", {
@@ -1050,7 +1050,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "1.75"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 360,
+								lineNumber: 362,
 								columnNumber: 11
 							}, void 0),
 							hud.hitMarker && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("path", {
@@ -1060,19 +1060,19 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeLinecap: "round"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 366,
+								lineNumber: 368,
 								columnNumber: 13
 							}, void 0)
 						]
 					}, void 0, true, {
 						fileName: _jsxFileName$4,
-						lineNumber: 318,
+						lineNumber: 320,
 						columnNumber: 9
 					}, void 0)
 				]
 			}, void 0, true, {
 				fileName: _jsxFileName$4,
-				lineNumber: 291,
+				lineNumber: 293,
 				columnNumber: 7
 			}, void 0),
 			/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1087,19 +1087,19 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 									className: "flex items-center justify-between gap-2 text-[10px] font-hud uppercase tracking-wider text-slate-400",
 									children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: ["Kills ", hud.kills] }, void 0, true, {
 										fileName: _jsxFileName$4,
-										lineNumber: 389,
+										lineNumber: 391,
 										columnNumber: 15
 									}, void 0), hud.combo > 1 && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
 										className: "text-amber-300 font-bold",
 										children: ["x", hud.combo]
 									}, void 0, true, {
 										fileName: _jsxFileName$4,
-										lineNumber: 390,
+										lineNumber: 392,
 										columnNumber: 33
 									}, void 0)]
 								}, void 0, true, {
 									fileName: _jsxFileName$4,
-									lineNumber: 388,
+									lineNumber: 390,
 									columnNumber: 13
 								}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 									className: `${shortViewport ? "text-base" : "text-lg sm:text-2xl"} font-display font-bold text-amber-400 leading-tight font-hud`,
@@ -1107,12 +1107,12 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 									children: hud.score.toLocaleString()
 								}, void 0, false, {
 									fileName: _jsxFileName$4,
-									lineNumber: 392,
+									lineNumber: 394,
 									columnNumber: 13
 								}, void 0)]
 							}, void 0, true, {
 								fileName: _jsxFileName$4,
-								lineNumber: 381,
+								lineNumber: 383,
 								columnNumber: 11
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1130,7 +1130,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 												]
 											}, void 0, true, {
 												fileName: _jsxFileName$4,
-												lineNumber: 405,
+												lineNumber: 407,
 												columnNumber: 15
 											}, void 0),
 											/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -1139,7 +1139,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 												children: "|"
 											}, void 0, false, {
 												fileName: _jsxFileName$4,
-												lineNumber: 406,
+												lineNumber: 408,
 												columnNumber: 15
 											}, void 0),
 											/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -1147,7 +1147,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 												children: hud.missionTitle
 											}, void 0, false, {
 												fileName: _jsxFileName$4,
-												lineNumber: 407,
+												lineNumber: 409,
 												columnNumber: 15
 											}, void 0),
 											hud.timeRemainingSec !== null && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)(import_jsx_dev_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -1156,24 +1156,24 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 												children: "|"
 											}, void 0, false, {
 												fileName: _jsxFileName$4,
-												lineNumber: 410,
+												lineNumber: 412,
 												columnNumber: 19
 											}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
 												className: hud.timeRemainingSec <= 30 ? "text-rose-400 font-bold" : "text-amber-300",
 												children: formatTime(hud.timeRemainingSec)
 											}, void 0, false, {
 												fileName: _jsxFileName$4,
-												lineNumber: 411,
+												lineNumber: 413,
 												columnNumber: 19
 											}, void 0)] }, void 0, true, {
 												fileName: _jsxFileName$4,
-												lineNumber: 409,
+												lineNumber: 411,
 												columnNumber: 17
 											}, void 0)
 										]
 									}, void 0, true, {
 										fileName: _jsxFileName$4,
-										lineNumber: 404,
+										lineNumber: 406,
 										columnNumber: 13
 									}, void 0),
 									/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1181,7 +1181,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 										children: hud.objectiveText
 									}, void 0, false, {
 										fileName: _jsxFileName$4,
-										lineNumber: 421,
+										lineNumber: 423,
 										columnNumber: 13
 									}, void 0),
 									(hud.incomingWarning || hud.bannerMessage) && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1195,25 +1195,25 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 											]
 										}, void 0, true, {
 											fileName: _jsxFileName$4,
-											lineNumber: 427,
+											lineNumber: 429,
 											columnNumber: 19
 										}, void 0), hud.bannerMessage && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 											className: "px-3 py-0.5 bg-[#090f1d]/90 text-amber-300 text-[11px] font-hud font-semibold tracking-wider rounded border border-amber-500/40 whitespace-nowrap truncate max-w-[360px]",
 											children: hud.bannerMessage
 										}, void 0, false, {
 											fileName: _jsxFileName$4,
-											lineNumber: 432,
+											lineNumber: 434,
 											columnNumber: 19
 										}, void 0)]
 									}, void 0, true, {
 										fileName: _jsxFileName$4,
-										lineNumber: 425,
+										lineNumber: 427,
 										columnNumber: 15
 									}, void 0)
 								]
 							}, void 0, true, {
 								fileName: _jsxFileName$4,
-								lineNumber: 403,
+								lineNumber: 405,
 								columnNumber: 11
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1235,19 +1235,19 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 											children: ["A:", hud.autoTargetEnabled ? "ON" : "OFF"]
 										}, void 0, true, {
 											fileName: _jsxFileName$4,
-											lineNumber: 458,
+											lineNumber: 460,
 											columnNumber: 15
 										}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
 											className: "hidden sm:inline",
 											children: ["Auto: ", hud.autoTargetEnabled ? "ON" : "OFF"]
 										}, void 0, true, {
 											fileName: _jsxFileName$4,
-											lineNumber: 459,
+											lineNumber: 461,
 											columnNumber: 15
 										}, void 0)]
 									}, void 0, true, {
 										fileName: _jsxFileName$4,
-										lineNumber: 442,
+										lineNumber: 444,
 										columnNumber: 13
 									}, void 0),
 									/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
@@ -1265,19 +1265,19 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 											children: ["C:", shortCamLabel]
 										}, void 0, true, {
 											fileName: _jsxFileName$4,
-											lineNumber: 473,
+											lineNumber: 475,
 											columnNumber: 15
 										}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
 											className: "hidden sm:inline",
 											children: ["Cam: ", hud.cameraMode.toUpperCase()]
 										}, void 0, true, {
 											fileName: _jsxFileName$4,
-											lineNumber: 474,
+											lineNumber: 476,
 											columnNumber: 15
 										}, void 0)]
 									}, void 0, true, {
 										fileName: _jsxFileName$4,
-										lineNumber: 462,
+										lineNumber: 464,
 										columnNumber: 13
 									}, void 0),
 									/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
@@ -1293,7 +1293,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 										children: "Pad"
 									}, void 0, false, {
 										fileName: _jsxFileName$4,
-										lineNumber: 477,
+										lineNumber: 479,
 										columnNumber: 13
 									}, void 0),
 									/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
@@ -1314,28 +1314,28 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 											strokeWidth: "2",
 											children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("path", { d: "M11 5L6 9H2v6h4l5 4V5z" }, void 0, false, {
 												fileName: _jsxFileName$4,
-												lineNumber: 507,
+												lineNumber: 509,
 												columnNumber: 17
 											}, void 0), muted ? /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("path", {
 												d: "M22 9l-6 6M16 9l6 6",
 												stroke: "#f87171"
 											}, void 0, false, {
 												fileName: _jsxFileName$4,
-												lineNumber: 509,
+												lineNumber: 511,
 												columnNumber: 19
 											}, void 0) : /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("path", { d: "M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" }, void 0, false, {
 												fileName: _jsxFileName$4,
-												lineNumber: 511,
+												lineNumber: 513,
 												columnNumber: 19
 											}, void 0)]
 										}, void 0, true, {
 											fileName: _jsxFileName$4,
-											lineNumber: 506,
+											lineNumber: 508,
 											columnNumber: 15
 										}, void 0)
 									}, void 0, false, {
 										fileName: _jsxFileName$4,
-										lineNumber: 495,
+										lineNumber: 497,
 										columnNumber: 13
 									}, void 0),
 									/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
@@ -1360,7 +1360,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 												rx: "1"
 											}, void 0, false, {
 												fileName: _jsxFileName$4,
-												lineNumber: 528,
+												lineNumber: 530,
 												columnNumber: 17
 											}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("rect", {
 												x: "14",
@@ -1370,29 +1370,29 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 												rx: "1"
 											}, void 0, false, {
 												fileName: _jsxFileName$4,
-												lineNumber: 529,
+												lineNumber: 531,
 												columnNumber: 17
 											}, void 0)]
 										}, void 0, true, {
 											fileName: _jsxFileName$4,
-											lineNumber: 527,
+											lineNumber: 529,
 											columnNumber: 15
 										}, void 0)
 									}, void 0, false, {
 										fileName: _jsxFileName$4,
-										lineNumber: 516,
+										lineNumber: 518,
 										columnNumber: 13
 									}, void 0)
 								]
 							}, void 0, true, {
 								fileName: _jsxFileName$4,
-								lineNumber: 441,
+								lineNumber: 443,
 								columnNumber: 11
 							}, void 0)
 						]
 					}, void 0, true, {
 						fileName: _jsxFileName$4,
-						lineNumber: 379,
+						lineNumber: 381,
 						columnNumber: 9
 					}, void 0),
 					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1405,7 +1405,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 									children: [String(hud.headingDeg).padStart(3, "0"), "°"]
 								}, void 0, true, {
 									fileName: _jsxFileName$4,
-									lineNumber: 538,
+									lineNumber: 540,
 									columnNumber: 13
 								}, void 0),
 								/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -1414,7 +1414,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 									children: "|"
 								}, void 0, false, {
 									fileName: _jsxFileName$4,
-									lineNumber: 541,
+									lineNumber: 543,
 									columnNumber: 13
 								}, void 0),
 								/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -1422,7 +1422,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 									children: hud.objectiveText
 								}, void 0, false, {
 									fileName: _jsxFileName$4,
-									lineNumber: 542,
+									lineNumber: 544,
 									columnNumber: 13
 								}, void 0),
 								hud.timeRemainingSec !== null && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)(import_jsx_dev_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -1431,29 +1431,29 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 									children: "|"
 								}, void 0, false, {
 									fileName: _jsxFileName$4,
-									lineNumber: 545,
+									lineNumber: 547,
 									columnNumber: 17
 								}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
 									className: `shrink-0 ${hud.timeRemainingSec <= 30 ? "text-rose-400 font-bold" : "text-amber-300"}`,
 									children: formatTime(hud.timeRemainingSec)
 								}, void 0, false, {
 									fileName: _jsxFileName$4,
-									lineNumber: 546,
+									lineNumber: 548,
 									columnNumber: 17
 								}, void 0)] }, void 0, true, {
 									fileName: _jsxFileName$4,
-									lineNumber: 544,
+									lineNumber: 546,
 									columnNumber: 15
 								}, void 0)
 							]
 						}, void 0, true, {
 							fileName: _jsxFileName$4,
-							lineNumber: 537,
+							lineNumber: 539,
 							columnNumber: 11
 						}, void 0)
 					}, void 0, false, {
 						fileName: _jsxFileName$4,
-						lineNumber: 536,
+						lineNumber: 538,
 						columnNumber: 9
 					}, void 0),
 					(hud.incomingWarning || hud.bannerMessage) && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1467,19 +1467,19 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 							]
 						}, void 0, true, {
 							fileName: _jsxFileName$4,
-							lineNumber: 562,
+							lineNumber: 564,
 							columnNumber: 15
 						}, void 0), hud.bannerMessage && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 							className: "px-2.5 py-0.5 bg-[#090f1d]/90 text-amber-300 text-[10px] font-hud font-semibold tracking-wider rounded border border-amber-500/40 whitespace-nowrap truncate max-w-[90vw]",
 							children: hud.bannerMessage
 						}, void 0, false, {
 							fileName: _jsxFileName$4,
-							lineNumber: 567,
+							lineNumber: 569,
 							columnNumber: 15
 						}, void 0)]
 					}, void 0, true, {
 						fileName: _jsxFileName$4,
-						lineNumber: 560,
+						lineNumber: 562,
 						columnNumber: 11
 					}, void 0),
 					touchEnabled && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1487,13 +1487,13 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 						children: [telemetryLeftBlock, telemetryRightBlock]
 					}, void 0, true, {
 						fileName: _jsxFileName$4,
-						lineNumber: 576,
+						lineNumber: 578,
 						columnNumber: 11
 					}, void 0)
 				]
 			}, void 0, true, {
 				fileName: _jsxFileName$4,
-				lineNumber: 377,
+				lineNumber: 379,
 				columnNumber: 7
 			}, void 0),
 			hud.cameraMode === "cockpit" && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("svg", {
@@ -1507,7 +1507,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 						fill: "rgba(9,13,22,0.55)"
 					}, void 0, false, {
 						fileName: _jsxFileName$4,
-						lineNumber: 591,
+						lineNumber: 593,
 						columnNumber: 11
 					}, void 0),
 					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("path", {
@@ -1517,7 +1517,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 						strokeWidth: "12"
 					}, void 0, false, {
 						fileName: _jsxFileName$4,
-						lineNumber: 595,
+						lineNumber: 597,
 						columnNumber: 11
 					}, void 0),
 					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("path", {
@@ -1527,7 +1527,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 						strokeWidth: "4"
 					}, void 0, false, {
 						fileName: _jsxFileName$4,
-						lineNumber: 601,
+						lineNumber: 603,
 						columnNumber: 11
 					}, void 0),
 					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("g", {
@@ -1544,7 +1544,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "1.5"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 609,
+								lineNumber: 611,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("circle", {
@@ -1556,7 +1556,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "1.5"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 610,
+								lineNumber: 612,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -1568,7 +1568,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "2"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 611,
+								lineNumber: 613,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("rect", {
@@ -1582,7 +1582,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "1.5"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 612,
+								lineNumber: 614,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("rect", {
@@ -1594,7 +1594,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								fill: "#22c55e"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 613,
+								lineNumber: 615,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("rect", {
@@ -1606,7 +1606,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								fill: "#38bdf8"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 614,
+								lineNumber: 616,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("circle", {
@@ -1618,7 +1618,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "1.5"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 615,
+								lineNumber: 617,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -1630,7 +1630,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "2"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 616,
+								lineNumber: 618,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("rect", {
@@ -1644,7 +1644,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "1.5"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 617,
+								lineNumber: 619,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("polyline", {
@@ -1654,19 +1654,19 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "2"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 618,
+								lineNumber: 620,
 								columnNumber: 13
 							}, void 0)
 						]
 					}, void 0, true, {
 						fileName: _jsxFileName$4,
-						lineNumber: 608,
+						lineNumber: 610,
 						columnNumber: 11
 					}, void 0)
 				]
 			}, void 0, true, {
 				fileName: _jsxFileName$4,
-				lineNumber: 585,
+				lineNumber: 587,
 				columnNumber: 9
 			}, void 0),
 			!touchEnabled && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)(import_jsx_dev_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1674,7 +1674,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 				children: telemetryLeftBlock
 			}, void 0, false, {
 				fileName: _jsxFileName$4,
-				lineNumber: 626,
+				lineNumber: 628,
 				columnNumber: 11
 			}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 				className: "fixed right-4 bottom-5 flex flex-col items-end gap-2",
@@ -1693,7 +1693,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "0.03"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 633,
+								lineNumber: 635,
 								columnNumber: 19
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("circle", {
@@ -1705,7 +1705,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "0.02"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 634,
+								lineNumber: 636,
 								columnNumber: 19
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -1717,7 +1717,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "0.02"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 635,
+								lineNumber: 637,
 								columnNumber: 19
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("line", {
@@ -1729,7 +1729,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								strokeWidth: "0.02"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 636,
+								lineNumber: 638,
 								columnNumber: 19
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("polygon", {
@@ -1737,7 +1737,7 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								fill: "#f8fafc"
 							}, void 0, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 637,
+								lineNumber: 639,
 								columnNumber: 19
 							}, void 0),
 							hud.radarBlips.map((b) => /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("circle", {
@@ -1747,33 +1747,33 @@ var MilitaryHud = ({ hud, muted, touchEnabled, onCycleCamera, onToggleAutoTarget
 								fill: b.kind === "enemy" ? b.isLocked ? "#facc15" : "#ef4444" : b.kind === "checkpoint" ? "#38bdf8" : "#22c55e"
 							}, b.id, false, {
 								fileName: _jsxFileName$4,
-								lineNumber: 639,
+								lineNumber: 641,
 								columnNumber: 21
 							}, void 0))
 						]
 					}, void 0, true, {
 						fileName: _jsxFileName$4,
-						lineNumber: 632,
+						lineNumber: 634,
 						columnNumber: 17
 					}, void 0)
 				}, void 0, false, {
 					fileName: _jsxFileName$4,
-					lineNumber: 631,
+					lineNumber: 633,
 					columnNumber: 15
 				}, void 0)]
 			}, void 0, true, {
 				fileName: _jsxFileName$4,
-				lineNumber: 628,
+				lineNumber: 630,
 				columnNumber: 11
 			}, void 0)] }, void 0, true, {
 				fileName: _jsxFileName$4,
-				lineNumber: 625,
+				lineNumber: 627,
 				columnNumber: 9
 			}, void 0)
 		]
 	}, void 0, true, {
 		fileName: _jsxFileName$4,
-		lineNumber: 149,
+		lineNumber: 151,
 		columnNumber: 5
 	}, void 0);
 };
@@ -1822,6 +1822,8 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 	(0, import_react.useEffect)(() => {
 		const onKey = (e) => {
 			if (e.code === "Enter" || e.code === "Space") {
+				const interactive = e.target?.closest("button, a, input, select, textarea, [role=\"button\"]");
+				if (interactive && interactive.getAttribute("data-start") !== "true") return;
 				e.preventDefault();
 				onStart();
 			}
@@ -1838,7 +1840,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 				style: { background: "linear-gradient(90deg, rgba(8,12,21,0.88) 0%, rgba(8,12,21,0.68) 68%, rgba(8,12,21,0) 100%)" }
 			}, void 0, false, {
 				fileName: _jsxFileName$3,
-				lineNumber: 64,
+				lineNumber: 69,
 				columnNumber: 7
 			}, void 0),
 			/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1857,7 +1859,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 								strokeWidth: "2.5"
 							}, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 80,
+								lineNumber: 85,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("polygon", {
@@ -1865,7 +1867,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 								fill: "#f59e0b"
 							}, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 86,
+								lineNumber: 91,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("polygon", {
@@ -1873,27 +1875,27 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 								fill: "#e2e8f0"
 							}, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 87,
+								lineNumber: 92,
 								columnNumber: 13
 							}, void 0)
 						]
 					}, void 0, true, {
 						fileName: _jsxFileName$3,
-						lineNumber: 75,
+						lineNumber: 80,
 						columnNumber: 11
 					}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", { children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("h1", {
 						className: "font-display text-2xl sm:text-4xl lg:text-5xl font-bold tracking-wider text-white leading-none hud-stroke",
 						children: "SKY WARRIOR"
 					}, void 0, false, {
 						fileName: _jsxFileName$3,
-						lineNumber: 90,
+						lineNumber: 95,
 						columnNumber: 13
 					}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 						className: "flex items-center gap-2.5 mt-1 text-xs sm:text-sm font-hud tracking-[0.22em] text-amber-400",
 						children: [
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: "DOMINION" }, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 94,
+								lineNumber: 99,
 								columnNumber: 15
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -1902,7 +1904,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 								children: "·"
 							}, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 95,
+								lineNumber: 100,
 								columnNumber: 15
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -1910,22 +1912,22 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 								children: ["Best Score ", bestScore.toLocaleString()]
 							}, void 0, true, {
 								fileName: _jsxFileName$3,
-								lineNumber: 96,
+								lineNumber: 101,
 								columnNumber: 15
 							}, void 0)
 						]
 					}, void 0, true, {
 						fileName: _jsxFileName$3,
-						lineNumber: 93,
+						lineNumber: 98,
 						columnNumber: 13
 					}, void 0)] }, void 0, true, {
 						fileName: _jsxFileName$3,
-						lineNumber: 89,
+						lineNumber: 94,
 						columnNumber: 11
 					}, void 0)]
 				}, void 0, true, {
 					fileName: _jsxFileName$3,
-					lineNumber: 74,
+					lineNumber: 79,
 					columnNumber: 9
 				}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
 					type: "button",
@@ -1935,12 +1937,12 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 					children: muted ? "Audio: Off" : "Audio: On"
 				}, void 0, false, {
 					fileName: _jsxFileName$3,
-					lineNumber: 103,
+					lineNumber: 108,
 					columnNumber: 9
 				}, void 0)]
 			}, void 0, true, {
 				fileName: _jsxFileName$3,
-				lineNumber: 73,
+				lineNumber: 78,
 				columnNumber: 7
 			}, void 0),
 			/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1954,7 +1956,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 								children: "Flight Mode"
 							}, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 118,
+								lineNumber: 123,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1968,13 +1970,13 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 										children: item.label.replace(" Mode", "")
 									}, item.id, false, {
 										fileName: _jsxFileName$3,
-										lineNumber: 123,
+										lineNumber: 128,
 										columnNumber: 19
 									}, void 0);
 								})
 							}, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 119,
+								lineNumber: 124,
 								columnNumber: 13
 							}, void 0),
 							/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("p", {
@@ -1982,12 +1984,12 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 								children: MODE_ITEMS.find((m) => m.id === mode)?.desc
 							}, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 138,
+								lineNumber: 143,
 								columnNumber: 13
 							}, void 0)
 						] }, void 0, true, {
 							fileName: _jsxFileName$3,
-							lineNumber: 117,
+							lineNumber: 122,
 							columnNumber: 11
 						}, void 0),
 						mode !== "freeflight" && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -1998,7 +2000,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 									children: "Combat Difficulty"
 								}, void 0, false, {
 									fileName: _jsxFileName$3,
-									lineNumber: 146,
+									lineNumber: 151,
 									columnNumber: 15
 								}, void 0),
 								/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -2011,13 +2013,13 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 											children: DIFFICULTY_CONFIG[d].label
 										}, d, false, {
 											fileName: _jsxFileName$3,
-											lineNumber: 151,
+											lineNumber: 156,
 											columnNumber: 21
 										}, void 0);
 									})
 								}, void 0, false, {
 									fileName: _jsxFileName$3,
-									lineNumber: 147,
+									lineNumber: 152,
 									columnNumber: 15
 								}, void 0),
 								/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("p", {
@@ -2025,13 +2027,13 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 									children: DIFFICULTY_CONFIG[difficulty].desc
 								}, void 0, false, {
 									fileName: _jsxFileName$3,
-									lineNumber: 166,
+									lineNumber: 171,
 									columnNumber: 15
 								}, void 0)
 							]
 						}, void 0, true, {
 							fileName: _jsxFileName$3,
-							lineNumber: 145,
+							lineNumber: 150,
 							columnNumber: 13
 						}, void 0),
 						mode === "missions" && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -2042,7 +2044,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 									children: "Operation"
 								}, void 0, false, {
 									fileName: _jsxFileName$3,
-									lineNumber: 175,
+									lineNumber: 180,
 									columnNumber: 15
 								}, void 0),
 								/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -2054,12 +2056,12 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 										children: ["Sortie 0", idx + 1]
 									}, m.id, true, {
 										fileName: _jsxFileName$3,
-										lineNumber: 178,
+										lineNumber: 183,
 										columnNumber: 19
 									}, void 0))
 								}, void 0, false, {
 									fileName: _jsxFileName$3,
-									lineNumber: 176,
+									lineNumber: 181,
 									columnNumber: 15
 								}, void 0),
 								/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -2067,7 +2069,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 									children: activeMission.title
 								}, void 0, false, {
 									fileName: _jsxFileName$3,
-									lineNumber: 192,
+									lineNumber: 197,
 									columnNumber: 15
 								}, void 0),
 								/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("p", {
@@ -2075,7 +2077,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 									children: activeMission.briefing
 								}, void 0, false, {
 									fileName: _jsxFileName$3,
-									lineNumber: 193,
+									lineNumber: 198,
 									columnNumber: 15
 								}, void 0),
 								/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -2083,7 +2085,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 									children: [
 										/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: [activeMission.waves, " Waves"] }, void 0, true, {
 											fileName: _jsxFileName$3,
-											lineNumber: 197,
+											lineNumber: 202,
 											columnNumber: 17
 										}, void 0),
 										/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -2091,12 +2093,12 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 											children: "·"
 										}, void 0, false, {
 											fileName: _jsxFileName$3,
-											lineNumber: 198,
+											lineNumber: 203,
 											columnNumber: 17
 										}, void 0),
 										/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: [activeMission.checkpointCount, " Bonus Rings"] }, void 0, true, {
 											fileName: _jsxFileName$3,
-											lineNumber: 199,
+											lineNumber: 204,
 											columnNumber: 17
 										}, void 0),
 										/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
@@ -2104,7 +2106,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 											children: "·"
 										}, void 0, false, {
 											fileName: _jsxFileName$3,
-											lineNumber: 200,
+											lineNumber: 205,
 											columnNumber: 17
 										}, void 0),
 										/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: [
@@ -2115,19 +2117,19 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 											"s"
 										] }, void 0, true, {
 											fileName: _jsxFileName$3,
-											lineNumber: 201,
+											lineNumber: 206,
 											columnNumber: 17
 										}, void 0)
 									]
 								}, void 0, true, {
 									fileName: _jsxFileName$3,
-									lineNumber: 196,
+									lineNumber: 201,
 									columnNumber: 15
 								}, void 0)
 							]
 						}, void 0, true, {
 							fileName: _jsxFileName$3,
-							lineNumber: 174,
+							lineNumber: 179,
 							columnNumber: 13
 						}, void 0),
 						/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -2137,7 +2139,7 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 								children: "F-22X Livery"
 							}, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 211,
+								lineNumber: 216,
 								columnNumber: 13
 							}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 								className: "grid grid-cols-3 gap-1.5",
@@ -2152,30 +2154,30 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 											style: { backgroundColor: item.swatch }
 										}, void 0, false, {
 											fileName: _jsxFileName$3,
-											lineNumber: 226,
+											lineNumber: 231,
 											columnNumber: 21
 										}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
 											className: "truncate",
 											children: item.label.split(" ")[1]
 										}, void 0, false, {
 											fileName: _jsxFileName$3,
-											lineNumber: 230,
+											lineNumber: 235,
 											columnNumber: 21
 										}, void 0)]
 									}, item.id, true, {
 										fileName: _jsxFileName$3,
-										lineNumber: 216,
+										lineNumber: 221,
 										columnNumber: 19
 									}, void 0);
 								})
 							}, void 0, false, {
 								fileName: _jsxFileName$3,
-								lineNumber: 212,
+								lineNumber: 217,
 								columnNumber: 13
 							}, void 0)]
 						}, void 0, true, {
 							fileName: _jsxFileName$3,
-							lineNumber: 210,
+							lineNumber: 215,
 							columnNumber: 11
 						}, void 0),
 						/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
@@ -2186,18 +2188,18 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 							children: "Launch Sortie"
 						}, void 0, false, {
 							fileName: _jsxFileName$3,
-							lineNumber: 238,
+							lineNumber: 243,
 							columnNumber: 11
 						}, void 0)
 					]
 				}, void 0, true, {
 					fileName: _jsxFileName$3,
-					lineNumber: 115,
+					lineNumber: 120,
 					columnNumber: 9
 				}, void 0)
 			}, void 0, false, {
 				fileName: _jsxFileName$3,
-				lineNumber: 114,
+				lineNumber: 119,
 				columnNumber: 7
 			}, void 0),
 			/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
@@ -2207,25 +2209,25 @@ var TitleScreen = ({ mode, difficulty, missionIndex, livery, bestScore, muted, o
 					children: "W/S Pitch · A/D Roll · Q/E Yaw · Space/LMB Cannon · F/RMB Missile · Wheel Throttle · T Auto-Target · Shift Boost · X Evade · C View"
 				}, void 0, false, {
 					fileName: _jsxFileName$3,
-					lineNumber: 251,
+					lineNumber: 256,
 					columnNumber: 9
 				}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
 					className: "hidden sm:inline text-slate-400",
 					children: "Press Enter or Space to Launch"
 				}, void 0, false, {
 					fileName: _jsxFileName$3,
-					lineNumber: 254,
+					lineNumber: 259,
 					columnNumber: 9
 				}, void 0)]
 			}, void 0, true, {
 				fileName: _jsxFileName$3,
-				lineNumber: 250,
+				lineNumber: 255,
 				columnNumber: 7
 			}, void 0)
 		]
 	}, void 0, true, {
 		fileName: _jsxFileName$3,
-		lineNumber: 62,
+		lineNumber: 67,
 		columnNumber: 5
 	}, void 0);
 };
@@ -2237,20 +2239,26 @@ function shapeAxis(raw, deadzone = .08) {
 	const norm = (abs - deadzone) / (1 - deadzone);
 	return Math.sign(raw) * Math.pow(norm, 1.2);
 }
-var TouchControls = ({ missiles, maneuverReady, lockState, autoTargetEnabled, onToggleAutoTarget, onJoystickMove, onButtonChange }) => {
+var TouchControls = ({ missiles, maneuverReady, gunOverheated, lockState, autoTargetEnabled, onToggleAutoTarget, onJoystickMove, onButtonChange }) => {
 	const padRef = (0, import_react.useRef)(null);
 	const pointerIdRef = (0, import_react.useRef)(null);
 	const [knobOffset, setKnobOffset] = (0, import_react.useState)({
 		x: 0,
 		y: 0
 	});
+	const [shortViewport, setShortViewport] = (0, import_react.useState)(() => typeof window !== "undefined" && window.innerHeight < 520);
 	const [pressedBtns, setPressedBtns] = (0, import_react.useState)({
 		boost: false,
 		maneuver: false,
 		fireMissile: false,
 		fireGun: false
 	});
-	const maxRadius = 38;
+	(0, import_react.useEffect)(() => {
+		const onResize = () => setShortViewport(window.innerHeight < 520);
+		window.addEventListener("resize", onResize);
+		return () => window.removeEventListener("resize", onResize);
+	}, []);
+	const maxRadius = shortViewport ? 31 : 38;
 	const updateStick = (clientX, clientY) => {
 		const el = padRef.current;
 		if (!el) return;
@@ -2299,8 +2307,9 @@ var TouchControls = ({ missiles, maneuverReady, lockState, autoTargetEnabled, on
 		onPointerCancel: () => handleBtn(btn, false)
 	});
 	const missileBorder = lockState === "locked" ? "border-emerald-300 ring-2 ring-emerald-400/60 bg-emerald-600/85" : lockState === "acquiring" ? "border-amber-300 bg-amber-600/85" : "border-orange-300/70 bg-orange-600/85";
+	const btnSizeClass = shortViewport ? "w-[58px] h-[40px]" : "w-[62px] h-[50px] sm:w-[70px] sm:h-[56px]";
 	return /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
-		className: "fixed inset-x-0 bottom-0 z-20 flex items-end justify-between p-3 sm:p-5 pointer-events-none",
+		className: `fixed inset-x-0 bottom-0 z-20 flex items-end justify-between pointer-events-none ${shortViewport ? "px-3 py-2" : "p-3 sm:p-5"}`,
 		"data-testid": "touch-controls",
 		children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
 			ref: padRef,
@@ -2321,34 +2330,34 @@ var TouchControls = ({ missiles, maneuverReady, lockState, autoTargetEnabled, on
 				if (pointerIdRef.current === e.pointerId) resetStick();
 			},
 			onPointerCancel: resetStick,
-			className: "pointer-events-auto relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[#090f1d]/78 border-2 border-sky-400/55 flex items-center justify-center touch-none select-none shadow-xl",
+			className: `pointer-events-auto relative rounded-full bg-[#090f1d]/78 border-2 border-sky-400/55 flex items-center justify-center touch-none select-none shadow-xl ${shortViewport ? "w-24 h-24" : "w-28 h-28 sm:w-32 sm:h-32"}`,
 			children: [
 				/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", { className: "absolute inset-2.5 rounded-full border border-sky-400/20 pointer-events-none" }, void 0, false, {
 					fileName: _jsxFileName$2,
-					lineNumber: 122,
+					lineNumber: 141,
 					columnNumber: 9
 				}, void 0),
 				/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", { className: "absolute w-3 h-3 rounded-full bg-sky-400/20 pointer-events-none" }, void 0, false, {
 					fileName: _jsxFileName$2,
-					lineNumber: 123,
+					lineNumber: 142,
 					columnNumber: 9
 				}, void 0),
 				/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
-					className: "w-11 h-11 rounded-full bg-sky-400/90 border-2 border-white shadow-lg pointer-events-none",
+					className: `rounded-full bg-sky-400/90 border-2 border-white shadow-lg pointer-events-none ${shortViewport ? "w-9 h-9" : "w-11 h-11"}`,
 					style: { transform: `translate(${knobOffset.x}px, ${knobOffset.y}px)` }
 				}, void 0, false, {
 					fileName: _jsxFileName$2,
-					lineNumber: 124,
+					lineNumber: 143,
 					columnNumber: 9
 				}, void 0)
 			]
 		}, void 0, true, {
 			fileName: _jsxFileName$2,
-			lineNumber: 101,
+			lineNumber: 118,
 			columnNumber: 7
 		}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
-			className: "pointer-events-auto flex flex-col items-end gap-2",
-			children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
+			className: `pointer-events-auto flex flex-col items-end ${shortViewport ? "gap-1.5" : "gap-2"}`,
+			children: [!shortViewport && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
 				type: "button",
 				"aria-pressed": autoTargetEnabled,
 				onClick: (e) => {
@@ -2359,90 +2368,90 @@ var TouchControls = ({ missiles, maneuverReady, lockState, autoTargetEnabled, on
 				children: ["AUTO TARGET: ", autoTargetEnabled ? "ON" : "OFF"]
 			}, void 0, true, {
 				fileName: _jsxFileName$2,
-				lineNumber: 134,
-				columnNumber: 9
+				lineNumber: 156,
+				columnNumber: 11
 			}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("div", {
-				className: "grid grid-cols-2 gap-2 sm:gap-2.5",
+				className: `grid grid-cols-2 ${shortViewport ? "gap-1.5" : "gap-2 sm:gap-2.5"}`,
 				children: [
 					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
 						type: "button",
 						...bindTouchBtn("boost"),
-						className: `w-[62px] h-[50px] sm:w-[70px] sm:h-[56px] rounded-xl bg-amber-600/85 border border-amber-300/70 text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${pressedBtns.boost ? "scale-95 bg-amber-500" : ""}`,
+						className: `${btnSizeClass} rounded-xl bg-amber-600/85 border border-amber-300/70 text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${pressedBtns.boost ? "scale-95 bg-amber-500" : ""}`,
 						children: /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: "BOOST" }, void 0, false, {
 							fileName: _jsxFileName$2,
-							lineNumber: 158,
+							lineNumber: 181,
 							columnNumber: 13
 						}, void 0)
 					}, void 0, false, {
-						fileName: _jsxFileName$2,
-						lineNumber: 151,
-						columnNumber: 11
-					}, void 0),
-					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
-						type: "button",
-						disabled: !maneuverReady,
-						...bindTouchBtn("maneuver", !maneuverReady),
-						className: `w-[62px] h-[50px] sm:w-[70px] sm:h-[56px] rounded-xl border font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${maneuverReady ? `bg-sky-600/85 border-sky-300/70 text-white ${pressedBtns.maneuver ? "scale-95 bg-sky-500" : ""}` : "bg-slate-800/75 border-slate-700 text-slate-400"}`,
-						children: /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: "EVADE" }, void 0, false, {
-							fileName: _jsxFileName$2,
-							lineNumber: 171,
-							columnNumber: 13
-						}, void 0)
-					}, void 0, false, {
-						fileName: _jsxFileName$2,
-						lineNumber: 161,
-						columnNumber: 11
-					}, void 0),
-					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
-						type: "button",
-						disabled: missiles <= 0,
-						...bindTouchBtn("fireMissile", missiles <= 0),
-						className: `w-[62px] h-[50px] sm:w-[70px] sm:h-[56px] rounded-xl border text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${missiles > 0 ? missileBorder : "bg-slate-800/75 border-slate-700 text-slate-400"} ${pressedBtns.fireMissile ? "scale-95" : ""}`,
-						children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: lockState === "locked" ? "LOCK!" : "MSL" }, void 0, false, {
-							fileName: _jsxFileName$2,
-							lineNumber: 182,
-							columnNumber: 13
-						}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
-							className: "text-[10px] opacity-90",
-							children: missiles
-						}, void 0, false, {
-							fileName: _jsxFileName$2,
-							lineNumber: 183,
-							columnNumber: 13
-						}, void 0)]
-					}, void 0, true, {
 						fileName: _jsxFileName$2,
 						lineNumber: 174,
 						columnNumber: 11
 					}, void 0),
 					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
 						type: "button",
-						...bindTouchBtn("fireGun"),
-						className: `w-[62px] h-[50px] sm:w-[70px] sm:h-[56px] rounded-xl bg-rose-600/90 border border-rose-300/75 text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${pressedBtns.fireGun ? "scale-95 bg-rose-500" : ""}`,
-						children: /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: "FIRE" }, void 0, false, {
+						disabled: !maneuverReady,
+						...bindTouchBtn("maneuver", !maneuverReady),
+						className: `${btnSizeClass} rounded-xl border font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${maneuverReady ? `bg-sky-600/85 border-sky-300/70 text-white ${pressedBtns.maneuver ? "scale-95 bg-sky-500" : ""}` : "bg-slate-800/75 border-slate-700 text-slate-400"}`,
+						children: /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: "EVADE" }, void 0, false, {
 							fileName: _jsxFileName$2,
-							lineNumber: 193,
+							lineNumber: 194,
 							columnNumber: 13
 						}, void 0)
 					}, void 0, false, {
 						fileName: _jsxFileName$2,
-						lineNumber: 186,
+						lineNumber: 184,
+						columnNumber: 11
+					}, void 0),
+					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
+						type: "button",
+						disabled: missiles <= 0,
+						...bindTouchBtn("fireMissile", missiles <= 0),
+						className: `${btnSizeClass} rounded-xl border text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${missiles > 0 ? missileBorder : "bg-slate-800/75 border-slate-700 text-slate-400"} ${pressedBtns.fireMissile ? "scale-95" : ""}`,
+						children: [/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: lockState === "locked" ? "LOCK!" : "MSL" }, void 0, false, {
+							fileName: _jsxFileName$2,
+							lineNumber: 205,
+							columnNumber: 13
+						}, void 0), /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", {
+							className: "text-[10px] opacity-90 leading-none",
+							children: missiles
+						}, void 0, false, {
+							fileName: _jsxFileName$2,
+							lineNumber: 206,
+							columnNumber: 13
+						}, void 0)]
+					}, void 0, true, {
+						fileName: _jsxFileName$2,
+						lineNumber: 197,
+						columnNumber: 11
+					}, void 0),
+					/* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("button", {
+						type: "button",
+						...bindTouchBtn("fireGun"),
+						className: `${btnSizeClass} rounded-xl border text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${gunOverheated ? "bg-slate-800/85 border-rose-400/70 text-rose-300" : "bg-rose-600/90 border-rose-300/75"} ${pressedBtns.fireGun ? "scale-95 bg-rose-500" : ""}`,
+						children: /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)("span", { children: gunOverheated ? "COOL" : "FIRE" }, void 0, false, {
+							fileName: _jsxFileName$2,
+							lineNumber: 218,
+							columnNumber: 13
+						}, void 0)
+					}, void 0, false, {
+						fileName: _jsxFileName$2,
+						lineNumber: 209,
 						columnNumber: 11
 					}, void 0)
 				]
 			}, void 0, true, {
 				fileName: _jsxFileName$2,
-				lineNumber: 150,
+				lineNumber: 173,
 				columnNumber: 9
 			}, void 0)]
 		}, void 0, true, {
 			fileName: _jsxFileName$2,
-			lineNumber: 133,
+			lineNumber: 154,
 			columnNumber: 7
 		}, void 0)]
 	}, void 0, true, {
 		fileName: _jsxFileName$2,
-		lineNumber: 96,
+		lineNumber: 111,
 		columnNumber: 5
 	}, void 0);
 };
@@ -2596,6 +2605,7 @@ function App() {
 			}, this), touchEnabled && /* @__PURE__ */ (0, import_jsx_dev_runtime.jsxDEV)(TouchControls, {
 				missiles: hud.missiles,
 				maneuverReady: hud.maneuverReady,
+				gunOverheated: hud.gunOverheated,
 				lockState: hud.lockState,
 				autoTargetEnabled: hud.autoTargetEnabled,
 				onToggleAutoTarget: handleToggleAutoTarget,
@@ -2620,7 +2630,7 @@ function App() {
 				onMainMenu: handleMainMenu
 			}, void 0, false, {
 				fileName: _jsxFileName$1,
-				lineNumber: 201,
+				lineNumber: 202,
 				columnNumber: 7
 			}, this)
 		]

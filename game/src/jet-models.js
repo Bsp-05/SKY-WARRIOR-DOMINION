@@ -1,4 +1,4 @@
-import { C as MeshStandardMaterial, D as PlaneGeometry, F as SphereGeometry, I as TorusGeometry, O as PointLight, P as Shape, S as MeshPhysicalMaterial, T as OctahedronGeometry, b as Mesh, d as CylinderGeometry, g as Group, i as BoxGeometry, m as ExtrudeGeometry, s as CapsuleGeometry, u as ConeGeometry, w as Object3D, x as MeshBasicMaterial } from "../vendor/libs.min.js";
+import { C as MeshPhysicalMaterial, E as OctahedronGeometry, I as Shape, L as SphereGeometry, O as PlaneGeometry, R as TorusGeometry, S as MeshBasicMaterial, T as Object3D, d as CylinderGeometry, g as Group, i as BoxGeometry, k as PointLight, m as ExtrudeGeometry, s as CapsuleGeometry, u as ConeGeometry, w as MeshStandardMaterial, x as Mesh } from "../vendor/libs.min.js";
 // src/game/models.ts
 function getLiveryColors(livery) {
 	switch (livery) {

@@ -1,8 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface TouchControlsProps {
   missiles: number;
   maneuverReady: boolean;
+  gunOverheated: boolean;
   lockState: 'none' | 'acquiring' | 'locked';
   autoTargetEnabled: boolean;
   onToggleAutoTarget: () => void;
@@ -22,6 +23,7 @@ function shapeAxis(raw: number, deadzone = 0.08): number {
 export const TouchControls: React.FC<TouchControlsProps> = ({
   missiles,
   maneuverReady,
+  gunOverheated,
   lockState,
   autoTargetEnabled,
   onToggleAutoTarget,
@@ -31,6 +33,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
   const padRef = useRef<HTMLDivElement | null>(null);
   const pointerIdRef = useRef<number | null>(null);
   const [knobOffset, setKnobOffset] = useState({ x: 0, y: 0 });
+  const [shortViewport, setShortViewport] = useState<boolean>(
+    () => typeof window !== 'undefined' && window.innerHeight < 520
+  );
   const [pressedBtns, setPressedBtns] = useState<Record<ActionButton, boolean>>({
     boost: false,
     maneuver: false,
@@ -38,7 +43,13 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     fireGun: false,
   });
 
-  const maxRadius = 38;
+  useEffect(() => {
+    const onResize = () => setShortViewport(window.innerHeight < 520);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const maxRadius = shortViewport ? 31 : 38;
 
   const updateStick = (clientX: number, clientY: number) => {
     const el = padRef.current;
@@ -92,9 +103,15 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
       ? 'border-amber-300 bg-amber-600/85'
       : 'border-orange-300/70 bg-orange-600/85';
 
+  const btnSizeClass = shortViewport
+    ? 'w-[58px] h-[40px]'
+    : 'w-[62px] h-[50px] sm:w-[70px] sm:h-[56px]';
+
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-20 flex items-end justify-between p-3 sm:p-5 pointer-events-none"
+      className={`fixed inset-x-0 bottom-0 z-20 flex items-end justify-between pointer-events-none ${
+        shortViewport ? 'px-3 py-2' : 'p-3 sm:p-5'
+      }`}
       data-testid="touch-controls"
     >
       {/* Left Virtual Flight Stick */}
@@ -117,12 +134,16 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
           if (pointerIdRef.current === e.pointerId) resetStick();
         }}
         onPointerCancel={resetStick}
-        className="pointer-events-auto relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[#090f1d]/78 border-2 border-sky-400/55 flex items-center justify-center touch-none select-none shadow-xl"
+        className={`pointer-events-auto relative rounded-full bg-[#090f1d]/78 border-2 border-sky-400/55 flex items-center justify-center touch-none select-none shadow-xl ${
+          shortViewport ? 'w-24 h-24' : 'w-28 h-28 sm:w-32 sm:h-32'
+        }`}
       >
         <div className="absolute inset-2.5 rounded-full border border-sky-400/20 pointer-events-none" />
         <div className="absolute w-3 h-3 rounded-full bg-sky-400/20 pointer-events-none" />
         <div
-          className="w-11 h-11 rounded-full bg-sky-400/90 border-2 border-white shadow-lg pointer-events-none"
+          className={`rounded-full bg-sky-400/90 border-2 border-white shadow-lg pointer-events-none ${
+            shortViewport ? 'w-9 h-9' : 'w-11 h-11'
+          }`}
           style={{
             transform: `translate(${knobOffset.x}px, ${knobOffset.y}px)`,
           }}
@@ -130,28 +151,30 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
       </div>
 
       {/* Right Ergonomic Combat Action Cluster */}
-      <div className="pointer-events-auto flex flex-col items-end gap-2">
-        <button
-          type="button"
-          aria-pressed={autoTargetEnabled}
-          onClick={(e) => {
-            e.currentTarget.blur();
-            onToggleAutoTarget();
-          }}
-          className={`h-8 px-3 rounded-lg border font-hud font-bold text-[10px] sm:text-[11px] tracking-wider touch-none cursor-pointer transition-colors whitespace-nowrap ${
-            autoTargetEnabled
-              ? 'bg-emerald-600/85 border-emerald-300/80 text-white'
-              : 'bg-[#090f1d]/85 border-slate-600 text-slate-300'
-          }`}
-        >
-          AUTO TARGET: {autoTargetEnabled ? 'ON' : 'OFF'}
-        </button>
+      <div className={`pointer-events-auto flex flex-col items-end ${shortViewport ? 'gap-1.5' : 'gap-2'}`}>
+        {!shortViewport && (
+          <button
+            type="button"
+            aria-pressed={autoTargetEnabled}
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onToggleAutoTarget();
+            }}
+            className={`h-8 px-3 rounded-lg border font-hud font-bold text-[10px] sm:text-[11px] tracking-wider touch-none cursor-pointer transition-colors whitespace-nowrap ${
+              autoTargetEnabled
+                ? 'bg-emerald-600/85 border-emerald-300/80 text-white'
+                : 'bg-[#090f1d]/85 border-slate-600 text-slate-300'
+            }`}
+          >
+            AUTO TARGET: {autoTargetEnabled ? 'ON' : 'OFF'}
+          </button>
+        )}
 
-        <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+        <div className={`grid grid-cols-2 ${shortViewport ? 'gap-1.5' : 'gap-2 sm:gap-2.5'}`}>
           <button
             type="button"
             {...bindTouchBtn('boost')}
-            className={`w-[62px] h-[50px] sm:w-[70px] sm:h-[56px] rounded-xl bg-amber-600/85 border border-amber-300/70 text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${
+            className={`${btnSizeClass} rounded-xl bg-amber-600/85 border border-amber-300/70 text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${
               pressedBtns.boost ? 'scale-95 bg-amber-500' : ''
             }`}
           >
@@ -162,7 +185,7 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
             type="button"
             disabled={!maneuverReady}
             {...bindTouchBtn('maneuver', !maneuverReady)}
-            className={`w-[62px] h-[50px] sm:w-[70px] sm:h-[56px] rounded-xl border font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${
+            className={`${btnSizeClass} rounded-xl border font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${
               maneuverReady
                 ? `bg-sky-600/85 border-sky-300/70 text-white ${pressedBtns.maneuver ? 'scale-95 bg-sky-500' : ''}`
                 : 'bg-slate-800/75 border-slate-700 text-slate-400'
@@ -175,22 +198,24 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
             type="button"
             disabled={missiles <= 0}
             {...bindTouchBtn('fireMissile', missiles <= 0)}
-            className={`w-[62px] h-[50px] sm:w-[70px] sm:h-[56px] rounded-xl border text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${
+            className={`${btnSizeClass} rounded-xl border text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${
               missiles > 0 ? missileBorder : 'bg-slate-800/75 border-slate-700 text-slate-400'
             } ${pressedBtns.fireMissile ? 'scale-95' : ''}`}
           >
             <span>{lockState === 'locked' ? 'LOCK!' : 'MSL'}</span>
-            <span className="text-[10px] opacity-90">{missiles}</span>
+            <span className="text-[10px] opacity-90 leading-none">{missiles}</span>
           </button>
 
           <button
             type="button"
             {...bindTouchBtn('fireGun')}
-            className={`w-[62px] h-[50px] sm:w-[70px] sm:h-[56px] rounded-xl bg-rose-600/90 border border-rose-300/75 text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${
-              pressedBtns.fireGun ? 'scale-95 bg-rose-500' : ''
-            }`}
+            className={`${btnSizeClass} rounded-xl border text-white font-hud font-bold text-[11px] sm:text-xs flex flex-col items-center justify-center touch-none cursor-pointer transition-transform ${
+              gunOverheated
+                ? 'bg-slate-800/85 border-rose-400/70 text-rose-300'
+                : 'bg-rose-600/90 border-rose-300/75'
+            } ${pressedBtns.fireGun ? 'scale-95 bg-rose-500' : ''}`}
           >
-            <span>FIRE</span>
+            <span>{gunOverheated ? 'COOL' : 'FIRE'}</span>
           </button>
         </div>
       </div>

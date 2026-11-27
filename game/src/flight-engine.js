@@ -1,4 +1,4 @@
-import { A as RingGeometry, E as PerspectiveCamera, L as Vector3, M as Scene, b as Mesh, i as BoxGeometry, j as SRGBColorSpace, l as Color, n as PMREMGenerator, p as Euler, r as WebGLRenderer, t as RoomEnvironment, v as IcosahedronGeometry, w as Object3D, x as MeshBasicMaterial, y as InstancedMesh } from "../vendor/libs.min.js";
+import { A as Points, D as PerspectiveCamera, M as RingGeometry, N as SRGBColorSpace, P as Scene, S as MeshBasicMaterial, T as Object3D, b as Line, i as BoxGeometry, l as Color, n as PMREMGenerator, p as Euler, r as WebGLRenderer, t as RoomEnvironment, v as IcosahedronGeometry, x as Mesh, y as InstancedMesh, z as Vector3 } from "../vendor/libs.min.js";
 import { t as SoundEngine } from "./combat-audio.js";
 import { a as createMissileModel, i as createFighterJetModel, n as createCollectibleModel, r as createEnemyJetModel, t as createCheckpointRingModel } from "./jet-models.js";
 import { C as stepPlayerFlight, S as stepEnemyAI, _ as getEnemyScoreValue, a as checkPlayerBuildingCollision, b as resolveSafeCameraPosition, c as clamp, d as createInitialPlayerState, f as damp, g as getEnemyMaxHealth, h as generateCollectibles, i as applyAssistedPursuit, l as computeAimAssistLead, m as generateCheckpoints, n as MISSIONS, o as checkSegmentSphereCollision, p as evaluateTargetLock, s as checkSphereCollision, t as DIFFICULTY_CONFIG, u as computeMissionRank, v as getForwardVector, x as sampleTerrainHeight, y as lerp } from "./flight-rules.js";
@@ -58,6 +58,7 @@ var FlightGameEngine = class {
 		this.lockedTargetId = null;
 		this.lockProgress = 0;
 		this.gunFireTimer = 0;
+		this.gunOverheated = false;
 		this.muzzleFlashTimers = [0, 0];
 		this.enemyMissileCooldown = 14;
 		this.survivalSpawnTimer = 0;
@@ -336,6 +337,7 @@ var FlightGameEngine = class {
 		if (this.livery === livery) return;
 		this.livery = livery;
 		this.scene.remove(this.playerRig.root);
+		this.disposeGroupResources(this.playerRig.root);
 		this.playerRig = createFighterJetModel(livery, this.textures, this.isSoftwareGl);
 		this.scene.add(this.playerRig.root);
 		this.syncPlayerRigTransform(.016);
@@ -365,6 +367,7 @@ var FlightGameEngine = class {
 		this.hitMarkerTimer = 0;
 		this.combatFeedback = null;
 		this.muzzleFlashTimers = [0, 0];
+		this.gunOverheated = false;
 		this.enemyMissileCooldown = diffCfg.enemyMissileCooldown * .9;
 		this.survivalSpawnTimer = 0;
 		this.keys.clear();
@@ -554,7 +557,7 @@ var FlightGameEngine = class {
 	}
 	disposeGroupResources(group) {
 		group.traverse((obj) => {
-			if (obj instanceof Mesh) {
+			if (obj instanceof Mesh || obj instanceof Line || obj instanceof Points) {
 				obj.geometry.dispose();
 				if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
 				else obj.material.dispose();
@@ -568,10 +571,16 @@ var FlightGameEngine = class {
 		}
 		this.enemyRigs.clear();
 		this.enemies = [];
-		for (const m of this.checkpointMeshes.values()) this.scene.remove(m);
+		for (const m of this.checkpointMeshes.values()) {
+			this.scene.remove(m);
+			this.disposeGroupResources(m);
+		}
 		this.checkpointMeshes.clear();
 		this.checkpoints = [];
-		for (const c of this.collectibleMeshes.values()) this.scene.remove(c);
+		for (const c of this.collectibleMeshes.values()) {
+			this.scene.remove(c);
+			this.disposeGroupResources(c);
+		}
 		this.collectibleMeshes.clear();
 		this.collectibles = [];
 		for (const b of this.bullets) b.active = false;
@@ -732,7 +741,13 @@ var FlightGameEngine = class {
 		}
 	}
 	firePlayerCannons() {
-		if (this.player.gunHeat >= .98) return;
+		if (this.gunOverheated || this.player.gunHeat >= .98) {
+			if (!this.gunOverheated) {
+				this.gunOverheated = true;
+				this.showBanner("CANNON OVERHEAT — COOLING", 1.4);
+			}
+			return;
+		}
 		const bulletSpeed = 680;
 		const fwd = getForwardVector(this.player.heading, this.player.pitch, _vA);
 		const assist = computeAimAssistLead(this.player, this.enemies, this.lockedTargetId, bulletSpeed, this.difficulty);
@@ -954,8 +969,17 @@ var FlightGameEngine = class {
 		}
 		const diffCfg = DIFFICULTY_CONFIG[this.difficulty];
 		const input = this.readInput();
+		if (this.gunOverheated && this.player.gunHeat <= .45) this.gunOverheated = false;
+		const flightInput = this.gunOverheated ? {
+			...input,
+			fireGun: false
+		} : input;
 		const prevManeuver = this.player.maneuverTimer;
-		const flightOutcome = stepPlayerFlight(this.player, input, dt, this.mode, this.difficulty);
+		const flightOutcome = stepPlayerFlight(this.player, flightInput, dt, this.mode, this.difficulty);
+		if (!this.gunOverheated && this.player.gunHeat >= .98) {
+			this.gunOverheated = true;
+			this.showBanner("CANNON OVERHEAT — COOLING", 1.4);
+		}
 		if (prevManeuver <= 0 && this.player.maneuverTimer > 0) {
 			this.sound.playManeuver();
 			for (let i = 0; i < 10; i++) this.spawnParticle(this.player.pos.x, this.player.pos.y - 1, this.player.pos.z, (Math.random() - .5) * 48, -14 - Math.random() * 18, (Math.random() - .5) * 48, .95, .9, 2.2, 16707722);
@@ -1011,7 +1035,7 @@ var FlightGameEngine = class {
 		applyAssistedPursuit(this.player, pursuitTarget, input, this.world.buildingObstacles, dt, this.autoTargetEnabled && this.mode !== "freeflight");
 		this.syncPlayerRigTransform(dt);
 		if (this.gunFireTimer > 0) this.gunFireTimer -= dt;
-		if (input.fireGun && this.player.takeoffTimer <= 0 && this.gunFireTimer <= 0) {
+		if (input.fireGun && !this.gunOverheated && this.player.takeoffTimer <= 0 && this.gunFireTimer <= 0) {
 			this.firePlayerCannons();
 			this.gunFireTimer = .08;
 		}
@@ -1429,16 +1453,26 @@ var FlightGameEngine = class {
 		const nextCp = this.checkpoints.find((c) => !c.collected) ?? null;
 		let projectedCp = null;
 		if (nextCp) {
-			_vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z);
-			_vProj.project(this.camera);
-			const inFront = _vProj.z >= -1 && _vProj.z <= 1;
-			const sx = clamp(_vProj.x * .5 + .5, .1, .9);
-			const sy = clamp(-_vProj.y * .5 + .5, .16, .74);
+			_vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z).applyMatrix4(this.camera.matrixWorldInverse);
+			const inFront = _vProj.z < -1;
+			let screenX = .5;
+			let screenY = .5;
+			if (inFront) {
+				_vProj.set(nextCp.pos.x, nextCp.pos.y, nextCp.pos.z).project(this.camera);
+				screenX = clamp(_vProj.x * .5 + .5, .1, .9);
+				screenY = clamp(-_vProj.y * .5 + .5, .16, .74);
+			} else {
+				const dx = _vProj.x;
+				const dy = -_vProj.y;
+				const mag = Math.max(1e-4, Math.hypot(dx, dy));
+				screenX = clamp(.5 + dx / mag * .4, .14, .86);
+				screenY = clamp(.48 + dy / mag * .3, .18, .72);
+			}
 			const dist = Math.hypot(nextCp.pos.x - this.player.pos.x, nextCp.pos.y - this.player.pos.y, nextCp.pos.z - this.player.pos.z);
 			projectedCp = {
 				id: nextCp.id,
-				screenX: inFront ? sx : clamp(1 - sx, .18, .82),
-				screenY: inFront ? sy : .72,
+				screenX,
+				screenY,
 				inFront,
 				distance: Math.round(dist),
 				order: nextCp.order
@@ -1506,13 +1540,15 @@ var FlightGameEngine = class {
 		const leadSol = computeAimAssistLead(this.player, this.enemies, this.lockedTargetId, 680, this.difficulty);
 		let leadTarget = null;
 		if (leadSol) {
-			_vProj.set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z);
-			_vProj.project(this.camera);
-			if (_vProj.z >= -1 && _vProj.z <= 1) leadTarget = {
-				screenX: clamp(_vProj.x * .5 + .5, .08, .92),
-				screenY: clamp(-_vProj.y * .5 + .5, .14, .78),
-				distance: leadSol.distance
-			};
+			_vProj.set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z).applyMatrix4(this.camera.matrixWorldInverse);
+			if (_vProj.z < -1) {
+				_vProj.set(leadSol.interceptPos.x, leadSol.interceptPos.y, leadSol.interceptPos.z).project(this.camera);
+				leadTarget = {
+					screenX: clamp(_vProj.x * .5 + .5, .08, .92),
+					screenY: clamp(-_vProj.y * .5 + .5, .14, .78),
+					distance: leadSol.distance
+				};
+			}
 		}
 		let objectiveText = "Free Patrol — Clear Aerial Rings & Explore";
 		if (this.mode === "missions") objectiveText = `Wave ${this.wave}/${this.totalWaves}: Destroy ${aliveCount} Hostile${aliveCount === 1 ? "" : "s"} (Bonus Rings ${checkpointsCleared}/${this.checkpoints.length})`;
@@ -1540,6 +1576,7 @@ var FlightGameEngine = class {
 			missiles: this.player.missiles,
 			maxMissiles: this.player.maxMissiles,
 			gunHeat: this.player.gunHeat,
+			gunOverheated: this.gunOverheated,
 			afterburner: this.player.afterburnerActive,
 			maneuverReady: this.player.maneuverCooldown <= 0,
 			takeoffActive: this.player.takeoffTimer > 0,
@@ -1628,14 +1665,24 @@ var FlightGameEngine = class {
 		this.renderer.domElement.removeEventListener("contextmenu", this.handleContextMenu);
 		this.renderer.domElement.removeEventListener("wheel", this.handleWheel);
 		this.resizeObserver.disconnect();
+		this.clearDynamicActors();
+		this.scene.remove(this.playerRig.root);
+		this.disposeGroupResources(this.playerRig.root);
+		for (const m of this.missiles) {
+			this.scene.remove(m.mesh);
+			this.disposeGroupResources(m.mesh);
+		}
 		this.sound.dispose();
 		this.world.dispose();
 		this.textures.dispose();
+		this.scene.remove(this.bulletMesh);
 		this.bulletMesh.geometry.dispose();
 		this.bulletMesh.material.dispose();
+		this.scene.remove(this.particleMesh);
 		this.particleMesh.geometry.dispose();
 		this.particleMesh.material.dispose();
 		for (const s of this.shockwaves) {
+			this.scene.remove(s.mesh);
 			s.mesh.geometry.dispose();
 			s.mesh.material.dispose();
 		}

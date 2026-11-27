@@ -388,3 +388,31 @@ test('dive bounce cooldown prevents unfair instant multi-frame crashes and lead 
   assert.ok(leadInCone.interceptPos.x > movingTarget.pos.x, 'Intercept X should lead target +X motion');
 });
 
+test('cannon heat rises under fire and cools on release, and missiles reload over time', () => {
+  const player = createInitialPlayerState(true, 'beginner');
+  player.missiles = player.maxMissiles - 1;
+
+  for (let i = 0; i < 40; i++) {
+    stepPlayerFlight(player, { ...neutralInput, fireGun: true }, 0.05, 'missions', 'beginner');
+  }
+  const peakHeat = player.gunHeat;
+  assert.ok(peakHeat > 0.65, 'Sustained firing should build cannon heat');
+
+  for (let i = 0; i < 40; i++) {
+    stepPlayerFlight(player, { ...neutralInput, fireGun: false }, 0.05, 'missions', 'beginner');
+  }
+  assert.ok(player.gunHeat < peakHeat - 0.5, 'Releasing trigger should cool cannon heat');
+  assert.equal(player.missiles, player.maxMissiles, 'Missile should reload after reload interval');
+});
+
+test('freeflight mode regenerates fuel without triggering fuel depletion defeat', () => {
+  const player = createInitialPlayerState(true, 'standard');
+  player.fuel = 20;
+  for (let i = 0; i < 60; i++) {
+    const res = stepPlayerFlight(player, neutralInput, 0.05, 'freeflight', 'standard');
+    assert.equal(res.fuelDepleted, false);
+  }
+  assert.ok(player.fuel > 25, 'Free Flight should replenish fuel during cruise');
+});
+
+

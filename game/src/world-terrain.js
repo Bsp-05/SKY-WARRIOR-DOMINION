@@ -1,4 +1,4 @@
-import { C as MeshStandardMaterial, D as PlaneGeometry, F as SphereGeometry, L as Vector3, N as ShaderMaterial, _ as HemisphereLight, a as BufferAttribute, b as Mesh, c as CircleGeometry, d as CylinderGeometry, f as DirectionalLight, g as Group, h as FogExp2, i as BoxGeometry, l as Color, u as ConeGeometry, w as Object3D, x as MeshBasicMaterial, y as InstancedMesh } from "../vendor/libs.min.js";
+import { F as ShaderMaterial, L as SphereGeometry, O as PlaneGeometry, S as MeshBasicMaterial, T as Object3D, _ as HemisphereLight, a as BufferAttribute, c as CircleGeometry, d as CylinderGeometry, f as DirectionalLight, g as Group, h as FogExp2, i as BoxGeometry, l as Color, u as ConeGeometry, w as MeshStandardMaterial, x as Mesh, y as InstancedMesh, z as Vector3 } from "../vendor/libs.min.js";
 import { r as WORLD_RADIUS, x as sampleTerrainHeight } from "./flight-rules.js";
 // src/game/world.ts
 var SUN_DIRECTION = new Vector3(-.52, .21, -.83).normalize();

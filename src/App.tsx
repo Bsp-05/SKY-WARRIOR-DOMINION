@@ -188,6 +188,7 @@ export default function App() {
             <TouchControls
               missiles={hud.missiles}
               maneuverReady={hud.maneuverReady}
+              gunOverheated={hud.gunOverheated}
               lockState={hud.lockState}
               autoTargetEnabled={hud.autoTargetEnabled}
               onToggleAutoTarget={handleToggleAutoTarget}
